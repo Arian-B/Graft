@@ -1,163 +1,124 @@
-# Graft: Plugin Governance OS
+# Graft: Collaborative Plugin Development Studio
 
-> **Graft**: A governance-first development environment for building, versioning, and publishing plugins across Chrome, VS Code, WordPress, Figma, and Minecraft.
+> **Graft**: A web-based SaaS application for the structured development, governance, and version control of multi-platform plugins.
 
 ---
 
-## Overview
+## Project Overview
 
-Graft is a specialized development environment engineered to solve the fragmentation and governance challenges inherent in plugin development. Unlike general-purpose version control platforms, Graft enforces strict lifecycle management, append-only versioning, and platform-specific compliance from the initial scaffold.
+Graft is a specialized development environment engineered to bring order to the plugin development lifecycle. It allows developers to scaffold, edit, and collaborate on plugins for major platforms—Chrome, VS Code, WordPress, Figma, Photoshop, and Minecraft—within a unified interface.
 
-The system provides a unified interface to scaffold, edit, and publish plugins while abstracting the complexities of fork management, ownership transfers, and marketplace submission requirements. It is designed for teams that require auditability and stability in their plugin ecosystems.
+Unlike general-purpose version control systems, Graft enforces a strict governance model designed for plugin ecosystems. It implements append-only version history, explicit stability markers, and a request-to-edit workflow that ensures code integrity and clear ownership.
 
-## Core Features
+**Core Philosophy**: Graft is not a marketplace or a hosting provider. It is a **Collaborative Studio** that facilitates the creation and maintenance of plugin source code before it reaches public distribution channels.
 
-- **Multi-Platform Scaffolding**: Automated boilerplate generation for 6 major plugin architectures.
-- **Append-Only Versioning**: Immutable version history ensures code integrity; history cannot be rewritten or force-pushed.
-- **Stable Release Control**: Explicit "Mark Stable" workflows prevent accidental releases of development or beta code to production channels.
-- **Request-to-Edit Governance**: Strict permissioning model where non-owners must request edit access, creating a verifiable audit trail.
-- **Fork System**: Automated forking mechanism upon request approval preserves the integrity of the original codebase while enabling community contributions.
-- **Marketplace Publish Tracking**: Database-level tracking of versions published to external marketplaces versus internal development builds.
-- **Real-Time Collaboration**: Synchronized multi-cursor editing with user presence indicators, powered by Y.js CRDTs.
-- **Platform Guidance System**: Context-aware validation logic advising developers on platform-specific limitations (e.g., "Partial Preview" capabilities for Chrome Extensions).
+## Key Features
+
+- **Multi-Platform Scaffolding**: Automated generation of directory structures and manifest files for 6 supported plugin architectures.
+- **Append-Only Versioning**: Linear, immutable version history. Every save operation creates a new, distinct version snapshot; no history rewriting or force-pushes are possible.
+- **Stable Release Control**: Explicit "Mark Stable" functionality restricted to plugin owners, preventing accidental release of development builds.
+- **Request-to-Edit Governance**: Non-owners must request edit access. Approved requests automatically trigger the creation of a **Fork**, isolating changes from the original codebase.
+- **Marketplace Publish Tracking**: Database-level tracking of version stability and publication status, bridging the gap between internal development and external release.
+- **Real-Time Collaboration**: Synchronized, multi-user editing with presence indicators, allowing teams to pair-program on plugin code in real-time.
+- **Platform Capability Logic**: Context-aware system that differentiates between Full Preview, Partial Preview, and Template-Only support based on the target platform's constraints.
+- **Activity Timeline**: Comprehensive audit log recording critical actions including creation, versioning, stability marking, forking, and publishing events.
 
 ## System Architecture
 
-Graft is architected as a high-performance web application prioritizing data integrity and real-time state synchronization.
+Graft is built as a high-performance, type-safe web application prioritizing data integrity and real-time state synchronization.
 
-### Frontend Stack
+### Frontend
 
-- **Next.js 14 (App Router)**: robust server-side rendering and routing architecture.
-- **TypeScript**: Strict type safety enforced across the entire codebase.
-- **Tailwind CSS**: Utility-first styling framework implementing a clean, accessible UI design system.
-- **Monaco Editor**: Integration of the VS Code editor engine for a professional-grade coding experience.
+- **Next.js 14 (App Router)**: Server-side rendering and routing.
+- **TypeScript**: Strict type enforcement across all components and utilities.
+- **Tailwind CSS**: Utility-first styling for a clean, minimal UI.
+- **Monaco Editor**: Integrated VS Code editor engine for syntax highlighting and code intelligence.
 
 ### Backend & Data
 
-- **Supabase (PostgreSQL)**: Relational database management for plugin metadata, version history, and governance logs.
-- **Row Level Security (RLS)**: Application-layer security ensuring strict ownership boundaries and data privacy.
-
-### Real-Time Layer
-
-- **Y.js + WebSockets**: Decentralized state synchronization engine for collaborative editing.
-- **Monaco Binding**: Bi-directional data binding typically used in enterprise-grade collaborative editors.
+- **Supabase (PostgreSQL)**: Relational database for persistent storage.
+- **Row Level Security (RLS)**: Application-layer logic enforcing ownership boundaries.
+- **Y.js + WebSockets**: Decentralized Conflict-free Replicated Data Type (CRDT) engine for real-time text synchronization.
+- **Y-Monaco Binding**: Bi-directional binding ensuring the editor state reflects the shared Y.js document.
 
 ## Database Schema
 
-The application logic relies on four primary relational tables:
+The comprehensive data model relies on four primary relational tables:
 
-1.  `plugins`: Stores metadata (name, type, owner) and marketplace publication status.
-2.  `versions`: An append-only log of file states specific to each plugin. Each save operation creates a new immutable record.
-3.  `edit_requests`: Manages the governance workflow for forking and merging access rights between users.
-4.  `activity_logs`: An immutable audit trail recording all critical system actions including creation, publishing, and forking events.
+1.  **`plugins`**: Stores metadata (name, type, owner, creation date) and marketplace publication status.
+2.  **`versions`**: An append-only log of file snapshots. Each row represents an immutable point in time.
+3.  **`edit_requests`**: Manages the governance workflow, tracking requester status and linking to subsequent forks.
+4.  **`activity_logs`**: An immutable audit trail recording all system events (Creation, Publishing, Forking, etc.).
 
-## Versioning Strategy
+## Versioning Model
 
-Graft implements a linear, **Append-Only** model optimized for the specific needs of plugin development cycles, departing from traditional branching models.
+Graft implements a linear, non-destructive versioning strategy:
 
-- **Immutable History**: Committed versions are locked and cannot be modified.
-- **Stable Tags**: Versions must be explicitly marked as "Stable" by the owner before they are eligible for publication.
-- **Concurrency Safety**: The editor safeguards against overwrites by enforcing new version increments (v1 -> v2) on every save operation.
+- **Metadata Separation**: Plugin identity is stored separately from file contents.
+- **Immutable Snapshots**: The `versions` table stores the actual file data. Once written, a version row is never mutated.
+- **Stability Gates**: Only versions explicitly marked as "Stable" by the owner are eligible for identifying as "Published".
+- **Concurrency Safety**: The editor enforces a new version increment (v1 -> v2) on every save, preventing accidental overwrites.
 
-## Collaboration Layer
+## Collaboration Model
 
-Real-time collaboration features are embedded directly into the editor interface:
+Real-time collaboration is architected around **Y.js** and **WebSockets**:
 
-- **Room Logic**: Plugin IDs serve as unique WebSocket channels.
-- **Awareness**: User presence indicators notify active participants of new joins.
-- **Conflict Resolution**: Utilization of Conflict-free Replicated Data Types (CRDTs) to handle concurrent edits without data loss.
-- **File Sync**: The shared data model is keyed by filename, enabling simultaneous multi-file editing sessions.
-
-## Marketplace Integration
-
-Graft bridges the gap between internal development and public release channels.
-
-- **Publish State**: The database tracks `marketplace_published` status and the specific `marketplace_version`.
-- **Redirects**: Dynamic linking to external submission platforms (e.g., Chrome Web Store Dashboard).
-- **Validation**: The interface restricts publishing of unstable versions, serving as an automated quality gate.
-
-## Folder Structure
-
-```
-graft/
-├── src/
-│   ├── app/
-│   │   ├── dashboard/       # Main user dashboard
-│   │   ├── editor/          # Monaco editor + Y.js logic
-│   │   ├── plugin/          # Plugin details & Activity timeline
-│   │   └── requests/        # Governance inbox
-│   ├── components/
-│   │   ├── editor/          # Editor UI shell & components
-│   │   └── ui/              # Shared UI elements
-│   ├── lib/
-│   │   ├── activity.ts      # Logging utility
-│   │   ├── pluginTypes.ts   # Platform metadata definitions
-│   │   ├── supabase.ts      # Database client
-│   │   ├── types.ts         # TypeScript interfaces
-│   │   └── useCollaboration.ts # Y.js Hook
-│   └── ...
-├── public/
-├── .env.local               # Environment secrets
-└── package.json
-```
+- **Room Isolation**: Access is scoped by `plugin_id`, ensuring isolation between projects.
+- **File-Level Sync**: Each file within a plugin has its own independent `Y.Text` binding, enabling simultaneous multi-file editing.
+- **Manual Persistence**: While edits sync in real-time between connected clients, database persistence is manual. Users must explicitly "Save" to commit the shared state to a new immutable version row.
 
 ## Local Development Setup
 
-Follow these steps to configure the Graft environment locally:
+### Prerequisites
 
-### 1. Clone the Repository
+- Node.js 18+
+- npm or pnpm
+- Git
 
-```bash
-git clone https://github.com/your-username/graft.git
-cd graft
-```
+### Installation
 
-### 2. Install Dependencies
-
-```bash
-npm install
-```
-
-### 3. Setup Supabase
-
-Configure a Supabase project and execute the SQL schema provided in `docs/schema.sql`.
-
-### 4. Environment Variables
-
-Create a `.env.local` file in the root directory with the following keys:
-
-```bash
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-```
-
-### 5. Run Development Server
-
-```bash
-npm run dev
-```
-
-Access the application at [http://localhost:3000](http://localhost:3000).
+1.  **Clone the Repository**
+    ```bash
+    git clone https://github.com/your-username/graft.git
+    cd graft
+    ```
+2.  **Install Dependencies**
+    ```bash
+    npm install
+    ```
+3.  **Configure Environment**
+    Create a `.env.local` file in the root directory:
+    ```bash
+    NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+    NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+    ```
+4.  **Initialize Database**
+    Execute the provided SQL schema in your Supabase SQL Editor to create the necessary tables.
+5.  **Start Development Server**
+    ```bash
+    npm run dev
+    ```
+    Access the application at `http://localhost:3000`.
 
 ## Demonstration Flow
 
-To validate the system capabilities, execute the following workflow:
+To validate the system's full capability set:
 
-1.  **Dashboard**: Verify the plugin grid view and publication status indicators.
-2.  **Creation**: Generate a new "Chrome Extension" project and inspect the boilerplate code.
-3.  **Versioning**: Modify a file, save, and confirm the version increment (v1 -> v2).
-4.  **Governance**: Simulate a non-owner identity, attempt to edit, and submit a "Request to Edit".
-5.  **Approval**: As the owner, approve the request and verify the automatic creation of a **Fork**.
-6.  **Comparison**: Utilize the diff tool to inspect code changes between version iterations.
+1.  **Dashboard**: Observe the plugin grid and status badges.
+2.  **Creation**: Scaffolding a "Minecraft Mod" plugin and inspecting the generated file structure.
+3.  **Versioning**: Modifying a file, saving it, and verifying the creation of Version 2 in the history list.
+4.  **Collaboration**: Opening the same plugin in a second browser window to demonstrate real-time cursor tracking and text sync.
+5.  **Governance**: Simulating a non-owner user, requesting edit access, and as the owner, approving the request to trigger an automatic **Fork**.
+6.  **Timeline**: Viewing the "Activity" section on the Plugin Details page to see the audit trail of all performed actions.
 
 ## Roadmap
 
-- **AI-Assisted Plugin Generation**: Integration of LLMs to generate functional plugin scaffolding from natural language prompts.
-- **Self-Hosted WebSocket Server**: Implementation of a private Hocuspocus instance to replace public signalling servers.
-- **Role-Based Authentication**: Migration from simulated identity to comprehensive Supabase Auth policies.
-- **Automated Publishing**: GitHub Actions pipelines for automated package building and marketplace upload.
-- **Analytics Dashboard**: Aggregated metrics for tracking plugin usage and downloads.
+- **Self-Hosted WebSocket Server**: Migration from public signalling to a private Hocuspocus instance.
+- **Role-Based Access Control**: Implementation of granular permissions beyond simple Owner/Non-Owner.
+- **Automated CI/CD**: Integration with GitHub Actions for automated testing of plugin code.
+- **Plugin Analytics**: Dashboard for owners to track view counts and fork statistics.
+- **AI Code Assistant**: Integration of LLMs for context-aware code suggestions within the editor.
 
 ## Technical Impact
 
-**Graft** demonstrates advanced proficiency in **Full-Stack Application Architecture**. It showcases the ability to architect complex **governance systems** (Permissioning, Versioning), implement **real-time synchronization** (WebSockets, CRDTs), and design **relational database schemas** tailored to complex business logic (Audit trails, Forking). The project adheres to strict **System Design** principles where data integrity, auditability, and user intent are prioritized over CRUD simplicity.
+**Graft** demonstrates the architecture of a complex **governance-focused SaaS application**. It moves beyond simple CRUD operations to implement **distributed state synchronization** (Y.js/WebSockets), **immutable data modeling** (Append-Only Versioning), and **hierarchical permission systems** (Request-to-Edit/Forking). The project highlights proficiency in designing systems where data integrity, auditability, and collaborative workflows are critical requirements.
