@@ -1,91 +1,164 @@
-// Plugin Types
-export type PluginType = 
-  | 'chrome-extension'
-  | 'vscode-extension'
-  | 'wordpress-plugin'
-  | 'figma-plugin'
-  | 'photoshop-plugin'
-  | 'minecraft-mod';
+// ============================================================
+// All TypeScript interfaces for the Graft platform.
+// Single source of truth — used across API routes and the frontend.
+// ============================================================
 
-// Preview Support Levels
-export type PreviewSupport = 
-  | 'Full Preview'
-  | 'Partial Preview'
-  | 'UI Preview Only'
-  | 'Template Only';
+// ------ Enums -----------------------------------------------
 
-// Plugin Template File
-export interface PluginFile {
-  name: string;
-  content: string;
-  language: string;
+export type TeamRole = 'owner' | 'admin' | 'member'
+export type AnalyticsEventType = 'script_fired' | 'script_error' | 'config_fetched'
+
+// ------ Database Row Types ----------------------------------
+
+export interface Team {
+  id: string
+  name: string
+  slug: string
+  owner_id: string
+  created_at: string
 }
 
-// Plugin Template with structured files
-export interface PluginTemplate {
-  files: Record<string, string>; // filename -> content
-  entry: string; // entry file name
+export interface TeamMember {
+  id: string
+  team_id: string
+  user_id: string
+  role: TeamRole
+  joined_at: string
 }
 
-// Plugin Info for Create Page
-export interface PluginInfo {
-  id: PluginType;
-  name: string;
-  supportLevel: PreviewSupport;
-  badgeColor: string;
-  description: string;
-  icon: string;
+export interface Script {
+  id: string
+  team_id: string
+  owner_id: string
+  name: string
+  description: string | null
+  target_urls: string[]
+  is_active: boolean
+  current_version_id: string | null
+  remote_config: Record<string, unknown>
+  created_at: string
+  updated_at: string
 }
 
-// Plugin Name Mapping
-export const PLUGIN_NAMES: Record<PluginType, string> = {
-  'chrome-extension': 'Chrome Extension',
-  'vscode-extension': 'VS Code Extension',
-  'wordpress-plugin': 'WordPress Plugin',
-  'figma-plugin': 'Figma Plugin',
-  'photoshop-plugin': 'Photoshop Plugin',
-  'minecraft-mod': 'Minecraft Mod',
-};
-
-// Plugin row from Supabase
-export interface Plugin {
-  id: string;
-  name: string;
-  plugin_type: string;
-  created_at: string;
-  owner_name: string;
-  marketplace_published: boolean;
-  marketplace_version: number | null;
-  marketplace_platform: string | null;
+export interface ScriptVersion {
+  id: string
+  script_id: string
+  version_number: number
+  code: string
+  deployed_by: string | null
+  deployed_at: string
 }
 
-// Version row from Supabase
-export interface Version {
-  id: string;
-  plugin_id: string;
-  version_number: number;
-  files: Record<string, string>;
-  is_stable: boolean;
-  created_at: string;
+export interface TeamApiKey {
+  id: string
+  team_id: string
+  key_prefix: string   // First 16 chars — safe to display
+  key_hash: string     // SHA-256 hash — never returned to client
+  label: string
+  created_by: string | null
+  created_at: string
+  last_used_at: string | null
 }
 
-// Edit Request row from Supabase
-export interface EditRequest {
-  id: string;
-  plugin_id: string;
-  requester_name: string;
-  status: 'pending' | 'approved' | 'rejected';
-  created_at: string;
-  // Joins
-  plugins?: Plugin;
+export interface AnalyticsEvent {
+  id: string
+  script_id: string
+  event_type: AnalyticsEventType
+  page_url: string | null
+  companion_id: string | null
+  metadata: Record<string, unknown>
+  created_at: string
 }
 
-// Activity Log row from Supabase
-export interface ActivityLog {
-  id: string;
-  plugin_id: string;
-  actor: string;
-  action: string;
-  metadata: any;
-  created_at: string;
+// ------ Enriched / Joined Types ----------------------------
+
+export interface ScriptWithVersion extends Script {
+  current_version: Pick<ScriptVersion, 'id' | 'version_number' | 'code' | 'deployed_at'> | null
+  version_count: number
+}
+
+export interface CompanionScript {
+  id: string
+  name: string
+  code: string
+  target_urls: string[]
+  remote_config: Record<string, unknown>
+  version: number
+}
+
+export interface CompanionSyncResponse {
+  scripts: CompanionScript[]
+  synced_at: string
+}
+
+// ------ API Request / Response Shapes ----------------------
+
+export interface CreateTeamBody {
+  name: string
+  slug: string
+}
+
+export interface CreateScriptBody {
+  team_id: string
+  name: string
+  description?: string
+  target_urls: string[]
+  code: string
+}
+
+export interface UpdateScriptBody {
+  name?: string
+  description?: string
+  target_urls?: string[]
+  is_active?: boolean
+  remote_config?: Record<string, unknown>
+}
+
+export interface DeployScriptBody {
+  code: string
+}
+
+export interface RollbackBody {
+  version_number: number
+}
+
+export interface UpdateConfigBody {
+  config: Record<string, unknown>
+}
+
+export interface CreateApiKeyBody {
+  label: string
+}
+
+export interface ApiKeyCreatedResponse {
+  id: string
+  key: string          // Full key — shown ONCE, never stored
+  key_prefix: string
+  label: string
+  created_at: string
+}
+
+export interface ApiKeySafe {
+  id: string
+  key_prefix: string
+  label: string
+  created_at: string
+  last_used_at: string | null
+}
+
+export interface AnalyticsIngestEvent {
+  script_id: string
+  event_type: AnalyticsEventType
+  page_url?: string
+  companion_id?: string
+  metadata?: Record<string, unknown>
+}
+
+export interface AnalyticsIngestBody {
+  events: AnalyticsIngestEvent[]
+}
+
+export interface ApiError {
+  error: string
+  details?: string
 }
