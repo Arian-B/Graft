@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createUserClient } from '@/lib/supabase'
+import { createClient } from '@supabase/supabase-js'
 
 /**
  * GET /api/auth/callback
  *
  * Handles the OAuth redirect from Supabase Auth (GitHub OAuth).
- * Supabase sends the user back here after authentication.
+ * Supabase sends the user here after they authorize through GitHub.
  * We exchange the code for a session and redirect to the dashboard.
  */
 export async function GET(request: NextRequest) {
@@ -17,13 +17,20 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${origin}/auth/error?message=missing_code`)
   }
 
-  const db = createUserClient()
+  // Plain anon client — no token needed for code exchange
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { auth: { persistSession: false } }
+  )
 
-  const { error } = await db.auth.exchangeCodeForSession(code)
+  const { error } = await supabase.auth.exchangeCodeForSession(code)
 
   if (error) {
     console.error('[Graft Auth] OAuth callback error:', error.message)
-    return NextResponse.redirect(`${origin}/auth/error?message=${encodeURIComponent(error.message)}`)
+    return NextResponse.redirect(
+      `${origin}/auth/error?message=${encodeURIComponent(error.message)}`
+    )
   }
 
   return NextResponse.redirect(`${origin}${next}`)
