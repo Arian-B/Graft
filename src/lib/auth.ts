@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState } from 'react'
 import { createClient, SupabaseClient, User } from '@supabase/supabase-js'
 
 // ─── Browser Supabase Client (singleton) ─────────────────────────────────────
@@ -11,7 +11,15 @@ export function getSupabaseBrowser(): SupabaseClient {
   if (!browserClient) {
     browserClient = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        auth: {
+          persistSession:     true,  // Store session in localStorage (survives tab/browser close)
+          autoRefreshToken:   true,  // Silently refresh the access token before it expires
+          detectSessionInUrl: true,  // Picks up the auth code from callback URL
+          storageKey:         'graft-auth', // Named key so it doesn't conflict with other apps
+        },
+      }
     )
   }
   return browserClient
@@ -19,63 +27,19 @@ export function getSupabaseBrowser(): SupabaseClient {
 
 // ─── Auth Context ─────────────────────────────────────────────────────────────
 
-interface AuthContextValue {
+export interface AuthContextValue {
   user:    User | null
   loading: boolean
   signInWithGitHub: () => Promise<void>
   signOut: () => Promise<void>
 }
 
-const AuthContext = createContext<AuthContextValue>({
+export const AuthContext = createContext<AuthContextValue>({
   user:    null,
   loading: true,
   signInWithGitHub: async () => {},
   signOut: async () => {},
 })
-
-// ─── Auth Provider ────────────────────────────────────────────────────────────
-
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
-  const [loading, setLoading] = useState(true)
-  const supabase = getSupabaseBrowser()
-
-  useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null)
-      setLoading(false)
-    })
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null)
-      setLoading(false)
-    })
-
-    return () => subscription.unsubscribe()
-  }, [])
-
-  const signInWithGitHub = async () => {
-    await supabase.auth.signInWithOAuth({
-      provider: 'github',
-      options: {
-        redirectTo: `${window.location.origin}/api/auth/callback`,
-      },
-    })
-  }
-
-  const signOut = async () => {
-    await supabase.auth.signOut()
-    window.location.href = '/'
-  }
-
-  return (
-    <AuthContext.Provider value={{ user, loading, signInWithGitHub, signOut }}>
-      {children}
-    </AuthContext.Provider>
-  )
-}
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
@@ -83,8 +47,7 @@ export function useAuth() {
   return useContext(AuthContext)
 }
 
-// ─── API client helper ────────────────────────────────────────────────────────
-// Returns fetch options with the current user's Bearer token
+// ─── Authenticated fetch helper ───────────────────────────────────────────────
 
 export async function authHeaders(): Promise<HeadersInit> {
   const supabase = getSupabaseBrowser()
@@ -99,6 +62,8 @@ export async function authHeaders(): Promise<HeadersInit> {
 
 export async function apiFetch(path: string, options?: RequestInit) {
   const headers = await authHeaders()
-  const res = await fetch(path, { ...options, headers: { ...headers, ...options?.headers } })
-  return res
+  return fetch(path, {
+    ...options,
+    headers: { ...headers, ...options?.headers },
+  })
 }

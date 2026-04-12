@@ -19,14 +19,16 @@
 # misc
 .DS_Store
 *.pem
+Thumbs.db
 
 # debug
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# local env files
+# local env files — never commit these
 .env*.local
+.env
 
 # vercel
 .vercel
@@ -37,3 +39,11 @@ next-env.d.ts
 
 # package managers
 pnpm-lock.yaml
+
+# supabase local development
+/supabase/.branches
+/supabase/.temp
+
+# OS
+.DS_Store
+desktop.ini

@@ -1,227 +1,218 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Graft Companion</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      width: 320px;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      width: 300px;
       background: #0a0a0a;
-      color: #f4f4f5;
+      color: #fafafa;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 13px;
+      -webkit-font-smoothing: antialiased;
     }
 
+    /* ── Header */
     .header {
+      padding: 14px 16px;
+      border-bottom: 1px solid #1f1f1f;
       display: flex;
       align-items: center;
       gap: 10px;
-      padding: 16px;
-      border-bottom: 1px solid #1f1f1f;
     }
 
     .logo {
-      width: 28px;
-      height: 28px;
+      width: 26px; height: 26px;
       background: linear-gradient(135deg, #f97316, #ea580c);
-      border-radius: 6px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: 800;
-      font-size: 14px;
-      color: white;
-    }
-
-    .header-text h1 {
-      font-size: 14px;
-      font-weight: 600;
-      color: #f4f4f5;
-    }
-
-    .header-text p {
-      font-size: 11px;
-      color: #71717a;
-    }
-
-    .status-bar {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 10px 16px;
-      background: #111111;
-      border-bottom: 1px solid #1f1f1f;
-    }
-
-    .status-dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: #3f3f46;
+      border-radius: 7px;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 800; font-size: 13px; color: white;
       flex-shrink: 0;
     }
 
-    .status-dot.connected  { background: #22c55e; }
-    .status-dot.syncing    { background: #f59e0b; animation: pulse 1s infinite; }
-    .status-dot.error      { background: #ef4444; }
-    .status-dot.unconfigured { background: #3f3f46; }
+    .header-text { flex: 1; }
+    .header-title { font-weight: 700; font-size: 14px; }
+    .header-sub { font-size: 11px; color: #71717a; margin-top: 1px; }
 
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.3; }
-    }
-
-    .status-text {
-      font-size: 12px;
-      color: #a1a1aa;
-    }
-
-    .script-badge {
-      margin-left: auto;
-      background: #1f1f1f;
-      color: #71717a;
-      font-size: 10px;
-      padding: 2px 7px;
-      border-radius: 10px;
-    }
-
-    .script-badge.active { background: #1c2e1c; color: #4ade80; }
-
-    .section {
-      padding: 14px 16px;
+    /* ── Status bar */
+    .status-bar {
+      padding: 10px 16px;
       border-bottom: 1px solid #1f1f1f;
-    }
-
-    .section-label {
-      font-size: 10px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: #52525b;
-      margin-bottom: 8px;
-    }
-
-    .key-input-wrapper {
       display: flex;
+      align-items: center;
       gap: 8px;
     }
 
-    input[type="text"], input[type="password"] {
+    .dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: #52525b;
+    }
+    .dot.connected { background: #22c55e; animation: pulse 1.5s infinite; }
+    .dot.syncing   { background: #f59e0b; animation: pulse 0.7s infinite; }
+    .dot.error     { background: #ef4444; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; } 50% { opacity: 0.3; }
+    }
+
+    .status-text { flex: 1; color: #a1a1aa; }
+    .status-count {
+      background: rgba(249,115,22,0.12);
+      color: #f97316;
+      border-radius: 100px;
+      padding: 2px 8px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    /* ── API key section */
+    .section { padding: 14px 16px; border-bottom: 1px solid #1f1f1f; }
+    .section-label {
+      font-size: 10px; font-weight: 700;
+      color: #52525b; letter-spacing: 0.08em;
+      text-transform: uppercase; margin-bottom: 8px;
+    }
+
+    .input-row { display: flex; gap: 6px; }
+
+    input {
       flex: 1;
       background: #1a1a1a;
-      border: 1px solid #2a2a2a;
+      border: 1px solid #1f1f1f;
       border-radius: 6px;
-      color: #f4f4f5;
-      font-size: 11px;
-      font-family: 'SF Mono', 'Fira Code', monospace;
-      padding: 7px 10px;
+      color: #fafafa;
+      font-size: 12px;
+      font-family: 'SF Mono', monospace;
+      padding: 6px 10px;
       outline: none;
       transition: border-color 0.15s;
     }
-
     input:focus { border-color: #f97316; }
+    input::placeholder { color: #3f3f46; }
 
-    .btn {
+    button {
       background: #f97316;
-      color: white;
       border: none;
       border-radius: 6px;
-      padding: 7px 12px;
+      color: white;
+      cursor: pointer;
       font-size: 12px;
       font-weight: 600;
-      cursor: pointer;
+      padding: 6px 12px;
       transition: background 0.15s;
       white-space: nowrap;
+      font-family: inherit;
     }
-
-    .btn:hover { background: #ea580c; }
+    button:hover { background: #ea580c; }
 
     .btn-ghost {
       background: transparent;
-      color: #71717a;
-      border: 1px solid #2a2a2a;
-    }
-
-    .btn-ghost:hover { background: #1a1a1a; color: #f4f4f5; }
-
-    .key-display {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      background: #1a1a1a;
-      border: 1px solid #2a2a2a;
-      border-radius: 6px;
-      padding: 7px 10px;
-    }
-
-    .key-display code {
-      font-family: 'SF Mono', 'Fira Code', monospace;
-      font-size: 11px;
+      border: 1px solid #1f1f1f;
       color: #a1a1aa;
-      flex: 1;
+    }
+    .btn-ghost:hover { background: #1a1a1a; color: #fafafa; }
+
+    .btn-green {
+      background: rgba(34,197,94,0.1);
+      border: 1px solid rgba(34,197,94,0.2);
+      color: #4ade80;
+    }
+    .btn-green:hover { background: rgba(34,197,94,0.2); }
+
+    /* ── Dev section */
+    .dev-section {
+      padding: 12px 16px;
+      border-bottom: 1px solid #1f1f1f;
+      background: rgba(249,115,22,0.03);
     }
 
-    .synced-at {
+    .dev-id {
+      font-family: 'SF Mono', monospace;
       font-size: 10px;
       color: #52525b;
       margin-top: 6px;
+      word-break: break-all;
+      line-height: 1.4;
     }
 
+    .test-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      background: rgba(245,158,11,0.12);
+      color: #fbbf24;
+      border-radius: 100px;
+      padding: 2px 7px;
+      font-size: 10px; font-weight: 600;
+      margin-left: 6px;
+    }
+
+    /* ── Footer */
     .footer {
       padding: 10px 16px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
+      display: flex; gap: 6px;
     }
 
-    .footer a {
-      font-size: 11px;
-      color: #f97316;
-      text-decoration: none;
+    .message {
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      margin-top: 6px;
+      display: none;
     }
-
-    .footer a:hover { text-decoration: underline; }
-
-    .hidden { display: none !important; }
+    .message.success { background: rgba(34,197,94,0.1); color: #4ade80; display: block; }
+    .message.error   { background: rgba(239,68,68,0.1);  color: #f87171; display: block; }
   </style>
 </head>
 <body>
+
+  <!-- Header -->
   <div class="header">
     <div class="logo">G</div>
     <div class="header-text">
-      <h1>Graft Companion</h1>
-      <p>Browser automation sync</p>
+      <div class="header-title">Graft Companion</div>
+      <div class="header-sub" id="statusLabel">Checking...</div>
     </div>
   </div>
 
+  <!-- Status bar -->
   <div class="status-bar">
-    <div class="status-dot" id="statusDot"></div>
-    <span class="status-text" id="statusText">Checking connection...</span>
-    <span class="script-badge" id="scriptBadge">0 scripts</span>
+    <div class="dot" id="statusDot"></div>
+    <span class="status-text" id="statusText">Connecting...</span>
+    <span class="status-count" id="scriptCount" style="display:none"></span>
   </div>
 
-  <div class="section" id="setupSection">
+  <!-- API Key -->
+  <div class="section">
     <div class="section-label">Team API Key</div>
-    <div class="key-input-wrapper">
-      <input type="password" id="apiKeyInput" placeholder="graft_xxxxxxxxxxxx..." autocomplete="off" spellcheck="false" />
-      <button class="btn" id="saveKeyBtn">Connect</button>
+    <div class="input-row">
+      <input type="password" id="apiKeyInput" placeholder="graft_xxxxxxxxxxxxxxxx..." />
+      <button id="saveKeyBtn">Save</button>
     </div>
+    <div class="message" id="keyMessage"></div>
   </div>
 
-  <div class="section hidden" id="connectedSection">
-    <div class="section-label">Connected Key</div>
-    <div class="key-display">
-      <code id="keyDisplay">graft_••••••••</code>
-      <button class="btn btn-ghost" id="changeKeyBtn" style="padding:4px 8px;font-size:11px;">Change</button>
+  <!-- Dev mode -->
+  <div class="dev-section">
+    <div class="section-label">
+      Developer Mode
+      <span id="testBadge" class="test-badge" style="display:none">● testing</span>
     </div>
-    <div class="synced-at" id="syncedAt">Never synced</div>
+    <p style="color:#71717a; font-size:11px; line-height:1.5; margin-bottom:8px;">
+      Link this browser to your Graft account to test scripts before they go live to your team.
+    </p>
+    <button class="btn-green" id="linkBrowserBtn" style="width:100%">
+      🔗 Link to Graft account
+    </button>
+    <div class="dev-id" id="companionIdDisplay"></div>
   </div>
 
+  <!-- Footer -->
   <div class="footer">
-    <a href="https://graft.app" target="_blank">Open Graft Dashboard ↗</a>
-    <button class="btn btn-ghost" id="syncNowBtn" style="padding:4px 10px;font-size:11px;">Sync Now</button>
+    <button class="btn-ghost" id="syncNowBtn" style="flex:1">↻ Sync now</button>
+    <button class="btn-ghost" id="openDashBtn" style="flex:1">Open Graft ↗</button>
   </div>
 
   <script src="popup.js"></script>

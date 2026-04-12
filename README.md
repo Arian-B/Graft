@@ -1,124 +1,193 @@
-# Graft: Collaborative Plugin Development Studio
+# Graft
 
-> **Graft**: A web-based SaaS application for the structured development, governance, and version control of multi-platform plugins.
+> A private browser automation platform for engineering teams. Write a script once, deploy it to every team member's browser within 30 seconds, without publishing to the Chrome Web Store.
 
 ---
 
 ## Project Overview
 
-Graft is a specialized development environment engineered to bring order to the plugin development lifecycle. It allows developers to scaffold, edit, and collaborate on plugins for major platforms—Chrome, VS Code, WordPress, Figma, Photoshop, and Minecraft—within a unified interface.
+Graft is a self-hosted, team-scoped browser script deployment platform. It solves a problem common to every engineering team: internal browser automations are painful to distribute and maintain. Sharing a Tampermonkey script via Slack, asking teammates to load unpacked extensions, or publishing internal tools to the Chrome Web Store all impose unnecessary overhead.
 
-Unlike general-purpose version control systems, Graft enforces a strict governance model designed for plugin ecosystems. It implements append-only version history, explicit stability markers, and a request-to-edit workflow that ensures code integrity and clear ownership.
+Graft eliminates this entirely. A developer writes a script in the Graft editor, clicks deploy, and the Companion extension installed in every team member's browser picks it up automatically within 30 seconds. Updates, rollbacks, and remote configuration changes propagate with the same latency. No action is required from teammates.
 
-**Core Philosophy**: Graft is not a marketplace or a hosting provider. It is a **Collaborative Studio** that facilitates the creation and maintenance of plugin source code before it reaches public distribution channels.
+**Core philosophy**: The developer writes code. Graft handles the distribution. Teammates benefit without knowing anything changed.
+
+---
+
+## How It Works
+
+Graft has two components that work together:
+
+**The Platform** (this repository) is a Next.js web application where developers write scripts, manage deployments, and review team activity. It exposes a REST API that the Companion polls on a fixed interval.
+
+**The Companion** (`/companion`) is a Chrome MV3 extension that each team member installs once. It polls the platform API every 30 seconds, receives the team's active scripts, and injects them into matching browser tabs based on URL patterns. It also reports execution analytics back to the platform.
+
+---
+
+## Script Lifecycle
+
+Scripts move through an explicit review cycle before reaching team members:
+
+```
+draft  →  testing  →  pending_review  →  live
+                           |
+                        rejected  →  draft
+```
+
+- **draft**: Created but not running anywhere.
+- **testing**: Running only on the author's linked browser. No other team member is affected.
+- **pending_review**: Author has submitted for review. Awaiting admin or owner approval.
+- **live**: Approved. Delivered to all team Companion instances on next poll.
+- **rejected**: Returned to the author with a mandatory rejection note.
+
+Only team owners can approve or reject. Members can write, test, and submit. This ensures no unreviewed script ever reaches a production browser.
+
+---
 
 ## Key Features
 
-- **Multi-Platform Scaffolding**: Automated generation of directory structures and manifest files for 6 supported plugin architectures.
-- **Append-Only Versioning**: Linear, immutable version history. Every save operation creates a new, distinct version snapshot; no history rewriting or force-pushes are possible.
-- **Stable Release Control**: Explicit "Mark Stable" functionality restricted to plugin owners, preventing accidental release of development builds.
-- **Request-to-Edit Governance**: Non-owners must request edit access. Approved requests automatically trigger the creation of a **Fork**, isolating changes from the original codebase.
-- **Marketplace Publish Tracking**: Database-level tracking of version stability and publication status, bridging the gap between internal development and external release.
-- **Real-Time Collaboration**: Synchronized, multi-user editing with presence indicators, allowing teams to pair-program on plugin code in real-time.
-- **Platform Capability Logic**: Context-aware system that differentiates between Full Preview, Partial Preview, and Template-Only support based on the target platform's constraints.
-- **Activity Timeline**: Comprehensive audit log recording critical actions including creation, versioning, stability marking, forking, and publishing events.
+- **30-second propagation**: Script updates reach every team browser within one poll cycle, with no action required from teammates.
+- **Browser-only testing**: Developers link their browser to their Graft account once. Test deployments are scoped exclusively to that browser. Production users are unaffected during iteration.
+- **Role-based approval**: `member`, `admin`, and `owner` roles with explicit permissions at every lifecycle stage.
+- **Immutable version history**: Every deployment creates a new, append-only version row. No version is ever overwritten or deleted. Any version can be restored in one action.
+- **Remote configuration**: Scripts can read a JSON config object that owners can edit without redeploying. Useful for changing behavior parameters without touching code.
+- **Cryptographic API keys**: Team keys are generated with 32 bytes of entropy. Only a SHA-256 hash is stored. The full key is displayed once on creation.
+- **Invite by GitHub username**: Team members are added by their GitHub username. If they have not yet signed up for Graft, the invite is stored and auto-accepted the moment they log in.
+- **Analytics**: The Companion reports execution events (`script_fired`, `script_error`, `config_fetched`) back to the platform. Per-script and team-wide aggregated views are available.
+
+---
 
 ## System Architecture
 
-Graft is built as a high-performance, type-safe web application prioritizing data integrity and real-time state synchronization.
+### Platform
 
-### Frontend
+- **Next.js 14 (App Router)**: Server-side rendering, API routes, and routing.
+- **TypeScript**: Strict type enforcement across the entire codebase.
+- **Supabase (PostgreSQL)**: Relational database with Row Level Security on all tables.
+- **GitHub OAuth**: Authentication via Supabase Auth. User identity (name, username, avatar) is sourced directly from GitHub and refreshed on each login.
 
-- **Next.js 14 (App Router)**: Server-side rendering and routing.
-- **TypeScript**: Strict type enforcement across all components and utilities.
-- **Tailwind CSS**: Utility-first styling for a clean, minimal UI.
-- **Monaco Editor**: Integrated VS Code editor engine for syntax highlighting and code intelligence.
+### Companion Extension
 
-### Backend & Data
+- **Chrome MV3**: Service worker architecture with `chrome.alarms` for reliable polling.
+- **Content scripts**: Injected into matching tabs via `chrome.tabs.sendMessage` after each sync.
+- **Persistent companion ID**: A stable UUID generated on install, stored in `chrome.storage.sync`. Sent with every sync request to enable developer test routing.
 
-- **Supabase (PostgreSQL)**: Relational database for persistent storage.
-- **Row Level Security (RLS)**: Application-layer logic enforcing ownership boundaries.
-- **Y.js + WebSockets**: Decentralized Conflict-free Replicated Data Type (CRDT) engine for real-time text synchronization.
-- **Y-Monaco Binding**: Bi-directional binding ensuring the editor state reflects the shared Y.js document.
+---
 
 ## Database Schema
 
-The comprehensive data model relies on four primary relational tables:
+Seven tables in Supabase, all behind Row Level Security:
 
-1.  **`plugins`**: Stores metadata (name, type, owner, creation date) and marketplace publication status.
-2.  **`versions`**: An append-only log of file snapshots. Each row represents an immutable point in time.
-3.  **`edit_requests`**: Manages the governance workflow, tracking requester status and linking to subsequent forks.
-4.  **`activity_logs`**: An immutable audit trail recording all system events (Creation, Publishing, Forking, etc.).
+| Table | Purpose |
+|---|---|
+| `auth.users` | Managed by Supabase. Populated automatically on GitHub OAuth login. |
+| `teams` | Workspaces. Each team has a name, a unique slug, and an owner. |
+| `team_members` | Maps users to teams with explicit roles: `owner`, `admin`, `member`. |
+| `team_api_keys` | Hashed API keys used by the Companion. The plaintext key is never stored. |
+| `team_invites` | Pending invites by GitHub username. Auto-accepted on first login. |
+| `scripts` | The core entity. Stores metadata, status, target URLs, and remote config. |
+| `script_versions` | Append-only deployment history. Each deploy adds one row. |
+| `analytics_events` | Execution telemetry reported by the Companion. |
+| `companion_registrations` | Links a companion ID to a Graft user for test script routing. |
 
-## Versioning Model
-
-Graft implements a linear, non-destructive versioning strategy:
-
-- **Metadata Separation**: Plugin identity is stored separately from file contents.
-- **Immutable Snapshots**: The `versions` table stores the actual file data. Once written, a version row is never mutated.
-- **Stability Gates**: Only versions explicitly marked as "Stable" by the owner are eligible for identifying as "Published".
-- **Concurrency Safety**: The editor enforces a new version increment (v1 -> v2) on every save, preventing accidental overwrites.
-
-## Collaboration Model
-
-Real-time collaboration is architected around **Y.js** and **WebSockets**:
-
-- **Room Isolation**: Access is scoped by `plugin_id`, ensuring isolation between projects.
-- **File-Level Sync**: Each file within a plugin has its own independent `Y.Text` binding, enabling simultaneous multi-file editing.
-- **Manual Persistence**: While edits sync in real-time between connected clients, database persistence is manual. Users must explicitly "Save" to commit the shared state to a new immutable version row.
+---
 
 ## Local Development Setup
 
 ### Prerequisites
 
 - Node.js 18+
-- npm or pnpm
-- Git
+- npm
+- A Supabase project (free tier is sufficient)
+- A GitHub OAuth App
 
 ### Installation
 
-1.  **Clone the Repository**
-    ```bash
-    git clone https://github.com/your-username/graft.git
-    cd graft
-    ```
-2.  **Install Dependencies**
-    ```bash
-    npm install
-    ```
-3.  **Configure Environment**
-    Create a `.env.local` file in the root directory:
-    ```bash
-    NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-    NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-    ```
-4.  **Initialize Database**
-    Execute the provided SQL schema in your Supabase SQL Editor to create the necessary tables.
-5.  **Start Development Server**
-    ```bash
-    npm run dev
-    ```
-    Access the application at `http://localhost:3000`.
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/your-username/graft.git
+   cd graft
+   ```
 
-## Demonstration Flow
+2. **Install dependencies**
+   ```bash
+   npm install
+   ```
 
-To validate the system's full capability set:
+3. **Configure environment**
+   ```bash
+   cp .env.example .env.local
+   ```
+   Fill in the three required values. See `.env.example` for instructions.
 
-1.  **Dashboard**: Observe the plugin grid and status badges.
-2.  **Creation**: Scaffolding a "Minecraft Mod" plugin and inspecting the generated file structure.
-3.  **Versioning**: Modifying a file, saving it, and verifying the creation of Version 2 in the history list.
-4.  **Collaboration**: Opening the same plugin in a second browser window to demonstrate real-time cursor tracking and text sync.
-5.  **Governance**: Simulating a non-owner user, requesting edit access, and as the owner, approving the request to trigger an automatic **Fork**.
-6.  **Timeline**: Viewing the "Activity" section on the Plugin Details page to see the audit trail of all performed actions.
+4. **Initialize the database**
+   Execute `supabase/schema.sql` in your Supabase SQL Editor. This creates all tables, RLS policies, indexes, and triggers. Run it once on a clean project.
+
+5. **Configure GitHub OAuth**
+   - Create a GitHub OAuth App: `github.com → Settings → Developer Settings → OAuth Apps`
+   - Homepage URL: `http://localhost:3000`
+   - Authorization callback URL: `https://your-project.supabase.co/auth/v1/callback`
+   - Enable GitHub as a provider in Supabase: `Authentication → Providers → GitHub`
+
+6. **Start the development server**
+   ```bash
+   npm run dev
+   ```
+   The application is available at `http://localhost:3000`.
+
+### Companion Extension (Local Testing)
+
+1. Open `companion/background.js` and set `GRAFT_API_BASE` to `http://localhost:3000`.
+2. Open `chrome://extensions` in Chrome.
+3. Enable Developer Mode.
+4. Click "Load unpacked" and select the `/companion` directory.
+5. Open the extension popup, paste a team API key generated from the Graft dashboard, and click Save.
+
+---
+
+## API Reference
+
+| Method | Route | Description |
+|---|---|---|
+| GET | `/api/me` | Current user profile and team memberships |
+| GET, POST | `/api/teams` | List teams or create a new team |
+| GET, PUT, DELETE | `/api/teams/[id]` | Team detail, update, or delete |
+| POST, DELETE | `/api/teams/[id]/members` | Add or remove team members |
+| GET, POST, DELETE | `/api/teams/[id]/apikeys` | Manage team API keys |
+| GET, POST, DELETE | `/api/teams/[id]/invite` | Invite by GitHub username |
+| GET, POST | `/api/scripts` | List scripts or create a draft |
+| GET, PUT, DELETE | `/api/scripts/[id]` | Script detail, update, or delete |
+| POST | `/api/scripts/[id]/test` | Deploy to author's browser only |
+| POST | `/api/scripts/[id]/submit` | Submit for admin review |
+| POST | `/api/scripts/[id]/approve` | Approve and go live (admin/owner) |
+| POST | `/api/scripts/[id]/reject` | Reject with a required reason (admin/owner) |
+| POST | `/api/scripts/[id]/deploy` | Direct deploy, bypasses review (owner only) |
+| GET | `/api/scripts/[id]/versions` | Version history |
+| GET | `/api/scripts/[id]/versions/[num]` | Specific version code |
+| POST | `/api/scripts/[id]/rollback` | Restore a previous version |
+| GET, PUT | `/api/scripts/[id]/config` | Remote configuration |
+| GET | `/api/scripts/[id]/analytics` | Per-script analytics |
+| GET | `/api/analytics/summary` | Team-wide analytics |
+| GET | `/api/companion/sync` | Companion heartbeat — returns active scripts |
+| GET, DELETE | `/api/companion/register` | Link or unlink a browser for dev testing |
+| POST | `/api/analytics` | Companion event ingestion |
+
+---
 
 ## Roadmap
 
-- **Self-Hosted WebSocket Server**: Migration from public signalling to a private Hocuspocus instance.
-- **Role-Based Access Control**: Implementation of granular permissions beyond simple Owner/Non-Owner.
-- **Automated CI/CD**: Integration with GitHub Actions for automated testing of plugin code.
-- **Plugin Analytics**: Dashboard for owners to track view counts and fork statistics.
-- **AI Code Assistant**: Integration of LLMs for context-aware code suggestions within the editor.
+- **Staged rollouts**: Deploy to a percentage of team browsers before full release.
+- **Auto-pause on error rate**: Automatically disable scripts that exceed a configured error threshold.
+- **Script templates**: A library of common patterns for teams to fork and adapt.
+- **Firefox support**: Porting the Companion to Firefox using WebExtensions API compatibility.
+- **Webhook notifications**: Post-approval and post-rejection events sent to a configurable endpoint.
+- **Audit log**: Comprehensive event trail for team owners covering all deployment and membership actions.
 
-## Technical Impact
+---
 
-**Graft** demonstrates the architecture of a complex **governance-focused SaaS application**. It moves beyond simple CRUD operations to implement **distributed state synchronization** (Y.js/WebSockets), **immutable data modeling** (Append-Only Versioning), and **hierarchical permission systems** (Request-to-Edit/Forking). The project highlights proficiency in designing systems where data integrity, auditability, and collaborative workflows are critical requirements.
+## Security Model
+
+- All database tables are protected by Row Level Security. A logged-in user can only read and write data belonging to their teams.
+- The Companion authenticates exclusively via team API keys, not user credentials. API keys are never stored in plaintext.
+- The service role key used for Companion sync and analytics ingestion is server-side only and never returned to the browser.
+- Test scripts are routed by `companion_id`. Only the registered browser receives them. No other team member sees a script until it is approved and set to live.

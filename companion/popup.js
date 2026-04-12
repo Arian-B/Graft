@@ -1,116 +1,139 @@
-/**
- * Graft Companion — Popup Script
- * Manages the popup UI state and API key configuration.
- */
+const GRAFT_DASHBOARD = 'https://graft.vercel.app' // Change for local dev
 
-const statusDot     = document.getElementById('statusDot')
-const statusText    = document.getElementById('statusText')
-const scriptBadge   = document.getElementById('scriptBadge')
-const apiKeyInput   = document.getElementById('apiKeyInput')
-const saveKeyBtn    = document.getElementById('saveKeyBtn')
-const changeKeyBtn  = document.getElementById('changeKeyBtn')
-const syncNowBtn    = document.getElementById('syncNowBtn')
-const setupSection  = document.getElementById('setupSection')
-const connectedSection = document.getElementById('connectedSection')
-const keyDisplay    = document.getElementById('keyDisplay')
-const syncedAtEl    = document.getElementById('syncedAt')
+// ─── Load state on open ───────────────────────────────────────────────────────
 
-// ─── Status Rendering ────────────────────────────────────────────────────────
-
-const STATUS_MAP = {
-  connected:    { dot: 'connected',    text: 'Connected to Graft' },
-  syncing:      { dot: 'syncing',      text: 'Syncing scripts...' },
-  error:        { dot: 'error',        text: 'Sync error — check your connection' },
-  auth_error:   { dot: 'error',        text: 'Invalid API key' },
-  unconfigured: { dot: 'unconfigured', text: 'Not configured' },
-}
-
-function renderStatus(status, scriptCount, syncedAt) {
-  const s = STATUS_MAP[status] || STATUS_MAP.unconfigured
-
-  statusDot.className = 'status-dot ' + s.dot
-  statusText.textContent = s.text
-
-  scriptBadge.textContent = `${scriptCount || 0} script${scriptCount !== 1 ? 's' : ''}`
-  scriptBadge.className = 'script-badge' + (scriptCount > 0 ? ' active' : '')
-
-  if (syncedAt) {
-    const d = new Date(syncedAt)
-    syncedAtEl.textContent = 'Last synced: ' + d.toLocaleTimeString()
-  }
-}
-
-// ─── Key Management ──────────────────────────────────────────────────────────
-
-async function loadState() {
+async function init() {
+  // Load saved API key
   const { graftApiKey } = await chrome.storage.sync.get(['graftApiKey'])
-  const { graftStatus, graftScriptCount, graftSyncedAt } = await chrome.storage.local.get([
-    'graftStatus', 'graftScriptCount', 'graftSyncedAt'
-  ])
-
   if (graftApiKey) {
-    // Show connected state
-    setupSection.classList.add('hidden')
-    connectedSection.classList.remove('hidden')
-    keyDisplay.textContent = graftApiKey.substring(0, 16) + '••••••••'
-    renderStatus(graftStatus || 'unconfigured', graftScriptCount, graftSyncedAt)
-  } else {
-    // Show setup state
-    setupSection.classList.remove('hidden')
-    connectedSection.classList.add('hidden')
-    renderStatus('unconfigured', 0, null)
+    document.getElementById('apiKeyInput').value = graftApiKey
   }
+
+  // Get companion ID and display it
+  chrome.runtime.sendMessage({ type: 'GRAFT_GET_COMPANION_ID' }, ({ companion_id }) => {
+    const el = document.getElementById('companionIdDisplay')
+    if (companion_id) {
+      el.textContent = 'Companion ID: ' + companion_id
+    }
+  })
+
+  // Load current status
+  refreshStatus()
 }
 
-saveKeyBtn.addEventListener('click', async () => {
-  const key = apiKeyInput.value.trim()
+function refreshStatus() {
+  chrome.runtime.sendMessage(
+    { type: 'GRAFT_GET_STATUS' },
+    ({ graftStatus, graftSyncedAt, graftScriptCount, graftTestCount }) => {
+      const dot       = document.getElementById('statusDot')
+      const text      = document.getElementById('statusText')
+      const label     = document.getElementById('statusLabel')
+      const count     = document.getElementById('scriptCount')
+      const testBadge = document.getElementById('testBadge')
 
-  if (!key || !key.startsWith('graft_')) {
-    apiKeyInput.style.borderColor = '#ef4444'
-    apiKeyInput.placeholder = 'Key must start with graft_...'
-    setTimeout(() => {
-      apiKeyInput.style.borderColor = ''
-      apiKeyInput.placeholder = 'graft_xxxxxxxxxxxx...'
-    }, 2000)
+      // Remove all dot state classes
+      dot.className = 'dot'
+
+      switch (graftStatus) {
+        case 'connected':
+          dot.classList.add('connected')
+          text.textContent = `Synced — ${graftScriptCount || 0} script(s) active`
+          label.textContent = graftSyncedAt
+            ? 'Last sync: ' + new Date(graftSyncedAt).toLocaleTimeString()
+            : 'Connected'
+          if (graftScriptCount > 0) {
+            count.textContent = graftScriptCount + ' scripts'
+            count.style.display = ''
+          } else {
+            count.style.display = 'none'
+          }
+          // Show test badge if dev scripts are running
+          if (graftTestCount > 0) {
+            testBadge.style.display = ''
+          } else {
+            testBadge.style.display = 'none'
+          }
+          break
+
+        case 'syncing':
+          dot.classList.add('syncing')
+          text.textContent = 'Syncing...'
+          label.textContent = 'Fetching latest scripts'
+          count.style.display = 'none'
+          break
+
+        case 'auth_error':
+          dot.classList.add('error')
+          text.textContent = 'Invalid API key'
+          label.textContent = 'Update your key below'
+          count.style.display = 'none'
+          break
+
+        case 'error':
+          dot.classList.add('error')
+          text.textContent = 'Connection error'
+          label.textContent = 'Check your internet connection'
+          count.style.display = 'none'
+          break
+
+        case 'unconfigured':
+        default:
+          text.textContent = 'No API key set'
+          label.textContent = 'Paste your team key below'
+          count.style.display = 'none'
+          testBadge.style.display = 'none'
+      }
+    }
+  )
+}
+
+// ─── Save API key ─────────────────────────────────────────────────────────────
+
+document.getElementById('saveKeyBtn').addEventListener('click', async () => {
+  const key = document.getElementById('apiKeyInput').value.trim()
+  const msg = document.getElementById('keyMessage')
+
+  if (!key) {
+    msg.textContent = 'Please enter an API key.'
+    msg.className = 'message error'
     return
   }
 
   await chrome.storage.sync.set({ graftApiKey: key })
-  apiKeyInput.value = ''
+  msg.textContent = 'Key saved. Syncing now...'
+  msg.className = 'message success'
 
-  // Trigger background to sync immediately
-  chrome.runtime.sendMessage({ type: 'GRAFT_FORCE_SYNC' }).catch(() => {})
-
-  await loadState()
+  // Trigger immediate sync
+  chrome.runtime.sendMessage({ type: 'GRAFT_FORCE_SYNC' }, () => {
+    setTimeout(refreshStatus, 1500)
+    setTimeout(() => { msg.className = 'message' }, 3000)
+  })
 })
 
-changeKeyBtn.addEventListener('click', async () => {
-  await chrome.storage.sync.remove(['graftApiKey'])
-  await chrome.storage.local.set({ graftScripts: [], graftStatus: 'unconfigured', graftScriptCount: 0 })
-  await loadState()
+// ─── Link to Graft account ────────────────────────────────────────────────────
+
+document.getElementById('linkBrowserBtn').addEventListener('click', async () => {
+  chrome.runtime.sendMessage({ type: 'GRAFT_GET_COMPANION_ID' }, ({ companion_id }) => {
+    const url = `${GRAFT_DASHBOARD}/link-browser?companion_id=${encodeURIComponent(companion_id)}`
+    chrome.tabs.create({ url })
+  })
 })
 
-syncNowBtn.addEventListener('click', async () => {
-  syncNowBtn.textContent = 'Syncing...'
-  syncNowBtn.disabled = true
+// ─── Sync now ─────────────────────────────────────────────────────────────────
 
-  chrome.runtime.sendMessage({ type: 'GRAFT_FORCE_SYNC' }).catch(() => {})
-
-  setTimeout(async () => {
-    await loadState()
-    syncNowBtn.textContent = 'Sync Now'
-    syncNowBtn.disabled = false
-  }, 2000)
+document.getElementById('syncNowBtn').addEventListener('click', () => {
+  document.getElementById('statusText').textContent = 'Syncing...'
+  chrome.runtime.sendMessage({ type: 'GRAFT_FORCE_SYNC' }, () => {
+    setTimeout(refreshStatus, 1500)
+  })
 })
 
-// Enter key on input
-apiKeyInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') saveKeyBtn.click()
+// ─── Open dashboard ───────────────────────────────────────────────────────────
+
+document.getElementById('openDashBtn').addEventListener('click', () => {
+  chrome.tabs.create({ url: GRAFT_DASHBOARD + '/dashboard' })
 })
 
-// ─── Init ────────────────────────────────────────────────────────────────────
+// ─── Init ─────────────────────────────────────────────────────────────────────
 
-loadState()
-
-// Refresh status every 3 seconds while popup is open
-setInterval(loadState, 3000)
+init()

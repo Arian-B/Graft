@@ -1,35 +1,48 @@
 /**
  * Graft Companion — Background Service Worker
- *
- * Responsibilities:
- *  1. Poll the Graft API every 30 seconds for the team's active scripts
- *  2. Store received scripts in chrome.storage.local
- *  3. Broadcast updated scripts to all active content script tabs
- *  4. Buffer and flush analytics events every minute
- *  5. Handle manual sync requests from the popup
+ * 
+ * Core responsibilities:
+ *  1. Generate a stable companion_id (set once, persists forever)
+ *  2. Poll /api/companion/sync every 30 seconds
+ *  3. Pass companion_id header so dev-testing scripts can be returned
+ *  4. Distribute scripts to content scripts via tab messages
+ *  5. Buffer and flush analytics events every minute
  */
 
-// ─── Configuration ────────────────────────────────────────────────────────────
+// ─── Config ───────────────────────────────────────────────────────────────────
 
-// Change to http://localhost:3000 for local development
-const GRAFT_API_BASE = 'https://graft.vercel.app'
-
-const SYNC_INTERVAL_MINUTES    = 0.5  // 30 seconds
-const ANALYTICS_FLUSH_MINUTES  = 1    // 1 minute
+// Change to http://localhost:3000 for local dev
+const GRAFT_API_BASE           = 'https://graft.vercel.app'
+const SYNC_INTERVAL_MINUTES    = 0.5   // 30 seconds
+const ANALYTICS_FLUSH_MINUTES  = 1
 const ALARM_SYNC               = 'graft-sync'
 const ALARM_ANALYTICS          = 'graft-analytics-flush'
 
-// ─── Analytics Buffer ─────────────────────────────────────────────────────────
+// ─── Analytics buffer ─────────────────────────────────────────────────────────
 
 let analyticsBuffer = []
 
-// ─── Core Sync ────────────────────────────────────────────────────────────────
+// ─── Companion ID — generated once, stored forever ───────────────────────────
+
+async function getCompanionId() {
+  const stored = await chrome.storage.sync.get(['graftCompanionId'])
+  if (stored.graftCompanionId) return stored.graftCompanionId
+
+  // Generate a new UUID-style ID
+  const id = 'cmp_' + Array.from(crypto.getRandomValues(new Uint8Array(16)))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('')
+
+  await chrome.storage.sync.set({ graftCompanionId: id })
+  return id
+}
+
+// ─── Core sync ────────────────────────────────────────────────────────────────
 
 async function syncScripts() {
   const { graftApiKey } = await chrome.storage.sync.get(['graftApiKey'])
 
   if (!graftApiKey) {
-    console.log('[Graft] No API key configured. Open the popup to set one.')
     await chrome.storage.local.set({
       graftStatus: 'unconfigured',
       graftScripts: [],
@@ -41,16 +54,18 @@ async function syncScripts() {
   try {
     await chrome.storage.local.set({ graftStatus: 'syncing' })
 
+    const companionId = await getCompanionId()
+
     const response = await fetch(`${GRAFT_API_BASE}/api/companion/sync`, {
       method: 'GET',
       headers: {
-        'X-Graft-Key': graftApiKey,
-        'Content-Type': 'application/json',
+        'X-Graft-Key':        graftApiKey,
+        'X-Graft-Companion-ID': companionId,
+        'Content-Type':       'application/json',
       },
     })
 
     if (response.status === 401) {
-      console.error('[Graft] API key is invalid or revoked. Update it in the popup.')
       await chrome.storage.local.set({
         graftStatus: 'auth_error',
         graftScripts: [],
@@ -59,32 +74,27 @@ async function syncScripts() {
       return
     }
 
-    if (!response.ok) {
-      throw new Error(`Sync failed: HTTP ${response.status}`)
-    }
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
 
     const data = await response.json()
     const scripts = data.scripts || []
 
     await chrome.storage.local.set({
-      graftScripts: scripts,
-      graftSyncedAt: data.synced_at,
-      graftStatus: 'connected',
+      graftScripts:     scripts,
+      graftSyncedAt:    data.synced_at,
+      graftStatus:      'connected',
       graftScriptCount: scripts.length,
+      graftTestCount:   scripts.filter(s => s.is_test).length,
     })
 
-    console.log(`[Graft] Synced ${scripts.length} script(s) at ${data.synced_at}`)
-
-    // Broadcast to all tabs so content scripts update immediately
+    // Broadcast to all tabs
     const tabs = await chrome.tabs.query({})
     for (const tab of tabs) {
       if (tab.id) {
         chrome.tabs.sendMessage(tab.id, {
           type: 'GRAFT_SCRIPTS_UPDATED',
           scripts,
-        }).catch(() => {
-          // Tab may not have content script loaded (e.g., chrome:// pages) — safe to ignore
-        })
+        }).catch(() => {})
       }
     }
 
@@ -94,11 +104,10 @@ async function syncScripts() {
   }
 }
 
-// ─── Analytics Flush ──────────────────────────────────────────────────────────
+// ─── Analytics flush ──────────────────────────────────────────────────────────
 
 async function flushAnalytics() {
   if (analyticsBuffer.length === 0) return
-
   const { graftApiKey } = await chrome.storage.sync.get(['graftApiKey'])
   if (!graftApiKey) return
 
@@ -108,27 +117,21 @@ async function flushAnalytics() {
     const response = await fetch(`${GRAFT_API_BASE}/api/analytics`, {
       method: 'POST',
       headers: {
-        'X-Graft-Key': graftApiKey,
+        'X-Graft-Key':  graftApiKey,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ events: batch }),
     })
-
-    if (!response.ok) {
-      // Re-queue if failed
-      analyticsBuffer.unshift(...batch)
-    }
+    if (!response.ok) analyticsBuffer.unshift(...batch)
   } catch {
-    // Re-queue on network failure
     analyticsBuffer.unshift(...batch)
   }
 }
 
-// ─── Message Handler ──────────────────────────────────────────────────────────
+// ─── Message handler ──────────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
-  // From content scripts: buffer an analytics event
   if (message.type === 'GRAFT_ANALYTICS_EVENT') {
     analyticsBuffer.push({
       script_id:    message.script_id,
@@ -141,28 +144,31 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true
   }
 
-  // From popup: get current status for rendering
   if (message.type === 'GRAFT_GET_STATUS') {
     chrome.storage.local.get(
-      ['graftStatus', 'graftSyncedAt', 'graftScriptCount'],
-      (data) => sendResponse(data)
+      ['graftStatus', 'graftSyncedAt', 'graftScriptCount', 'graftTestCount'],
+      data => sendResponse(data)
     )
-    return true // Keep channel open for async response
+    return true
   }
 
-  // From popup: trigger an immediate sync (e.g. after API key is saved)
   if (message.type === 'GRAFT_FORCE_SYNC') {
     syncScripts().then(() => sendResponse({ ok: true }))
+    return true
+  }
+
+  if (message.type === 'GRAFT_GET_COMPANION_ID') {
+    getCompanionId().then(id => sendResponse({ companion_id: id }))
     return true
   }
 })
 
 // ─── Alarms ───────────────────────────────────────────────────────────────────
 
-chrome.alarms.create(ALARM_SYNC, { periodInMinutes: SYNC_INTERVAL_MINUTES })
+chrome.alarms.create(ALARM_SYNC,      { periodInMinutes: SYNC_INTERVAL_MINUTES })
 chrome.alarms.create(ALARM_ANALYTICS, { periodInMinutes: ANALYTICS_FLUSH_MINUTES })
 
-chrome.alarms.onAlarm.addListener((alarm) => {
+chrome.alarms.onAlarm.addListener(alarm => {
   if (alarm.name === ALARM_SYNC)      syncScripts()
   if (alarm.name === ALARM_ANALYTICS) flushAnalytics()
 })
@@ -170,7 +176,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 // ─── Startup ──────────────────────────────────────────────────────────────────
 
 chrome.runtime.onInstalled.addListener(() => {
-  console.log('[Graft] Companion installed. Open the popup to configure your team API key.')
+  getCompanionId() // Ensure ID is generated on install
   syncScripts()
 })
 

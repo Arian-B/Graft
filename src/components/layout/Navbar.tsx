@@ -77,10 +77,18 @@ export default function Navbar() {
             <div className="skeleton" style={{ width: 80, height: 32 }} />
           ) : user ? (
             <>
-              <span style={{
-                fontSize: 13, color: 'var(--text-2)',
-                display: 'flex', alignItems: 'center', gap: 8,
-              }}>
+              <Link
+                href="/profile"
+                style={{
+                  fontSize: 13, color: 'var(--text-2)',
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  textDecoration: 'none',
+                  padding: '3px 6px', borderRadius: 6,
+                  transition: 'background 0.15s',
+                }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-elevated)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              >
                 {user.user_metadata?.avatar_url && (
                   <img
                     src={user.user_metadata.avatar_url}
@@ -89,7 +97,7 @@ export default function Navbar() {
                   />
                 )}
                 {user.user_metadata?.user_name || user.email}
-              </span>
+              </Link>
               <button className="btn btn-ghost btn-sm" onClick={signOut}>Sign out</button>
             </>
           ) : (
