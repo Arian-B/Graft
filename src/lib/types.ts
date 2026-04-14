@@ -26,6 +26,8 @@ export interface TeamMember {
   joined_at: string
 }
 
+export type ScriptStatus = 'draft' | 'testing' | 'pending_review' | 'live' | 'rejected'
+
 export interface Script {
   id: string
   team_id: string
@@ -36,6 +38,10 @@ export interface Script {
   is_active: boolean
   current_version_id: string | null
   remote_config: Record<string, unknown>
+  status: ScriptStatus
+  rejection_reason: string | null
+  reviewed_by: string | null
+  reviewed_at: string | null
   created_at: string
   updated_at: string
 }
@@ -84,6 +90,7 @@ export interface CompanionScript {
   target_urls: string[]
   remote_config: Record<string, unknown>
   version: number
+  is_test: boolean   // true when status = 'testing' — Companion can show a dev badge
 }
 
 export interface CompanionSyncResponse {
