@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createUserClient, extractToken } from '@/lib/supabase'
+import { createUserClient, createAdminClient, extractToken } from '@/lib/supabase'
 
 // GET /api/scripts/[id]/versions — Get full version history for a script
 export async function GET(
@@ -14,14 +14,16 @@ export async function GET(
   const { data: { user }, error: authError } = await db.auth.getUser()
   if (authError || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  const adminDb = createAdminClient()
+
   // Get the current version ID to mark which is live
-  const { data: script } = await db
+  const { data: script } = await adminDb
     .from('scripts')
     .select('current_version_id')
     .eq('id', params.id)
     .single()
 
-  const { data: versions, error } = await db
+  const { data: versions, error } = await adminDb
     .from('script_versions')
     .select('id, version_number, deployed_by, deployed_at')  // code excluded for performance
     .eq('script_id', params.id)

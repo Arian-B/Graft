@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createUserClient, extractToken } from '@/lib/supabase'
+import { createUserClient, createAdminClient, extractToken } from '@/lib/supabase'
 import type { CreateTeamBody } from '@/lib/types'
 
 // GET /api/teams — List all teams the authenticated user belongs to
@@ -12,7 +12,8 @@ export async function GET(request: NextRequest) {
   const { data: { user }, error: authError } = await db.auth.getUser()
   if (authError || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { data: memberships, error } = await db
+  const adminDb = createAdminClient()
+  const { data: memberships, error } = await adminDb
     .from('team_members')
     .select('role, teams(*)')
     .eq('user_id', user.id)
@@ -57,8 +58,9 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  // Create the team
-  const { data: team, error: teamError } = await db
+  // Create the team using admin client to completely bypass RLS policy checks
+  const adminDb = createAdminClient()
+  const { data: team, error: teamError } = await adminDb
     .from('teams')
     .insert({ name: name.trim(), slug: slug.trim(), owner_id: user.id })
     .select()
@@ -71,8 +73,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: teamError.message }, { status: 500 })
   }
 
-  // Auto-add creator as owner in team_members
-  const { error: memberError } = await db
+  // Auto-add creator as owner in team_members already using admin client
+  const { error: memberError } = await adminDb
     .from('team_members')
     .insert({ team_id: team.id, user_id: user.id, role: 'owner' })
 

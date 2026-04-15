@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createUserClient, extractToken } from '@/lib/supabase'
+import { createUserClient, createAdminClient, extractToken } from '@/lib/supabase'
 import type { RollbackBody } from '@/lib/types'
 
 // POST /api/scripts/[id]/rollback — Roll back to a previous version
@@ -29,8 +29,10 @@ export async function POST(
     return NextResponse.json({ error: 'version_number is required' }, { status: 400 })
   }
 
+  const adminDb = createAdminClient()
+
   // Find the specific version
-  const { data: targetVersion, error: versionError } = await db
+  const { data: targetVersion, error: versionError } = await adminDb
     .from('script_versions')
     .select('id, version_number')
     .eq('script_id', params.id)
@@ -45,7 +47,7 @@ export async function POST(
   }
 
   // Update the pointer — no new version row created
-  const { error: updateError } = await db
+  const { error: updateError } = await adminDb
     .from('scripts')
     .update({ current_version_id: targetVersion.id })
     .eq('id', params.id)

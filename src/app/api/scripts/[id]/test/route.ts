@@ -22,8 +22,10 @@ export async function POST(
   const { data: { user }, error: authError } = await db.auth.getUser()
   if (authError || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  const adminDb = createAdminClient()
+
   // Fetch script and verify ownership
-  const { data: script, error: scriptError } = await db
+  const { data: script, error: scriptError } = await adminDb
     .from('scripts')
     .select('id, owner_id, team_id, current_version_id, status')
     .eq('id', params.id)
@@ -40,19 +42,13 @@ export async function POST(
     )
   }
 
-  if (script.status === 'live') {
-    return NextResponse.json(
-      { error: 'This script is already live. Create a new version via the deploy flow.' },
-      { status: 400 }
-    )
-  }
+  // (Removed block preventing testing of live scripts so users can iterate)
 
   const body = await request.json()
   const code: string = (body.code || '').trim()
   if (!code) return NextResponse.json({ error: 'code is required' }, { status: 400 })
 
   // Check if developer has a registered browser
-  const adminDb = createAdminClient()
   const { data: registration } = await adminDb
     .from('companion_registrations')
     .select('companion_id')
@@ -68,7 +64,7 @@ export async function POST(
   }
 
   // Get next version number
-  const { data: versions } = await db
+  const { data: versions } = await adminDb
     .from('script_versions')
     .select('version_number')
     .eq('script_id', params.id)

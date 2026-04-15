@@ -6,6 +6,7 @@ import dynamic from 'next/dynamic'
 import Navbar from '@/components/layout/Navbar'
 import { useAuth, apiFetch } from '@/lib/auth'
 import type { Team } from '@/lib/types'
+import { Rocket, AlertTriangle } from 'lucide-react'
 
 // Monaco must be client-side only
 const MonacoEditor = dynamic(() => import('@monaco-editor/react'), { ssr: false })
@@ -114,7 +115,8 @@ export default function NewScriptPage() {
         <span style={{ fontSize: 14, color: 'var(--text-2)' }}>New script</span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 10 }}>
           {error && (
-            <span style={{ fontSize: 12, color: 'var(--red)', display: 'flex', alignItems: 'center' }}>
+            <span style={{ fontSize: 12, color: 'var(--red)', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <AlertTriangle size={14} />
               {error}
             </span>
           )}
@@ -129,7 +131,9 @@ export default function NewScriptPage() {
                 <span className="dot dot-pulse" style={{ background: 'white' }} />
                 Deploying...
               </>
-            ) : '🚀 Create & Deploy'}
+            ) : (
+              <><Rocket size={14} /> Create & Deploy</>
+            )}
           </button>
         </div>
       </div>

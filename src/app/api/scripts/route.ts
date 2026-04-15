@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createUserClient, extractToken } from '@/lib/supabase'
+import { createUserClient, createAdminClient, extractToken } from '@/lib/supabase'
 import type { CreateScriptBody } from '@/lib/types'
 
 // GET /api/scripts?team_id=UUID — List all scripts for a team
@@ -19,8 +19,22 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'team_id query param is required' }, { status: 400 })
   }
 
-  // Fetch scripts + their total version count
-  const { data: scripts, error } = await db
+  const adminDb = createAdminClient()
+
+  // 1. Verify user belongs to the requested team
+  const { data: membership } = await adminDb
+    .from('team_members')
+    .select('id')
+    .eq('team_id', teamId)
+    .eq('user_id', user.id)
+    .single()
+
+  if (!membership) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
+  // Fetch scripts + their total version count using adminDb to bypass RLS recursion
+  const { data: scripts, error } = await adminDb
     .from('scripts')
     .select('*')
     .eq('team_id', teamId)
@@ -36,7 +50,7 @@ export async function GET(request: NextRequest) {
     .filter(Boolean) as string[]
 
   const { data: versions } = versionIds.length
-    ? await db
+    ? await adminDb
         .from('script_versions')
         .select('id, version_number, deployed_at')
         .in('id', versionIds)
@@ -47,7 +61,7 @@ export async function GET(request: NextRequest) {
   )
 
   // Count versions per script
-  const { data: counts } = await db
+  const { data: counts } = await adminDb
     .from('script_versions')
     .select('script_id')
     .in('script_id', scripts.map(s => s.id))
@@ -95,8 +109,22 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'target_urls must be a non-empty array' }, { status: 400 })
   }
 
-  // 1. Create the script record (no current_version_id yet)
-  const { data: script, error: scriptError } = await db
+  const adminDb = createAdminClient()
+
+  // 1. Verify user belongs to the target team before creating
+  const { data: membership } = await adminDb
+    .from('team_members')
+    .select('role')
+    .eq('team_id', team_id)
+    .eq('user_id', user.id)
+    .single()
+
+  if (!membership) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
+  // 2. Create the script record (no current_version_id yet)
+  const { data: script, error: scriptError } = await adminDb
     .from('scripts')
     .insert({
       team_id,
@@ -110,8 +138,8 @@ export async function POST(request: NextRequest) {
 
   if (scriptError) return NextResponse.json({ error: scriptError.message }, { status: 500 })
 
-  // 2. Create version 1
-  const { data: version, error: versionError } = await db
+  // 3. Create version 1
+  const { data: version, error: versionError } = await adminDb
     .from('script_versions')
     .insert({
       script_id: script.id,
@@ -124,8 +152,8 @@ export async function POST(request: NextRequest) {
 
   if (versionError) return NextResponse.json({ error: versionError.message }, { status: 500 })
 
-  // 3. Point script at version 1
-  const { data: updatedScript, error: updateError } = await db
+  // 4. Point script at version 1
+  const { data: updatedScript, error: updateError } = await adminDb
     .from('scripts')
     .update({ current_version_id: version.id })
     .eq('id', script.id)

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createUserClient, extractToken } from '@/lib/supabase'
+import { createUserClient, createAdminClient, extractToken } from '@/lib/supabase'
 import type { DeployScriptBody } from '@/lib/types'
 
 // POST /api/scripts/[id]/deploy — Deploy a new version of a script
@@ -29,10 +29,12 @@ export async function POST(
     return NextResponse.json({ error: 'code is required' }, { status: 400 })
   }
 
-  // Verify the script exists and user has access (RLS handles this)
-  const { data: script, error: scriptError } = await db
+  const adminDb = createAdminClient()
+
+  // Verify the script exists and user has access
+  const { data: script, error: scriptError } = await adminDb
     .from('scripts')
-    .select('id, current_version_id')
+    .select('id, current_version_id, team_id')
     .eq('id', params.id)
     .single()
 
@@ -40,8 +42,20 @@ export async function POST(
     return NextResponse.json({ error: 'Script not found' }, { status: 404 })
   }
 
+  // Manual membership check to bypass RLS recursion
+  const { data: membership } = await adminDb
+    .from('team_members')
+    .select('role')
+    .eq('team_id', script.team_id)
+    .eq('user_id', user.id)
+    .single()
+
+  if (!membership) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
   // Get the current max version number
-  const { data: maxVersionRow } = await db
+  const { data: maxVersionRow } = await adminDb
     .from('script_versions')
     .select('version_number')
     .eq('script_id', params.id)
@@ -52,7 +66,7 @@ export async function POST(
   const nextVersion = (maxVersionRow?.version_number ?? 0) + 1
 
   // Create the new version (append-only, immutable)
-  const { data: version, error: versionError } = await db
+  const { data: version, error: versionError } = await adminDb
     .from('script_versions')
     .insert({
       script_id: params.id,
@@ -68,9 +82,9 @@ export async function POST(
   }
 
   // Point the script at the new version
-  const { error: updateError } = await db
+  const { error: updateError } = await adminDb
     .from('scripts')
-    .update({ current_version_id: version.id })
+    .update({ current_version_id: version.id, status: 'live' })
     .eq('id', params.id)
 
   if (updateError) {

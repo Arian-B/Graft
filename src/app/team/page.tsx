@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import Navbar from '@/components/layout/Navbar'
 import { useAuth, apiFetch } from '@/lib/auth'
 import type { Team, TeamMember, ApiKeySafe, ApiKeyCreatedResponse } from '@/lib/types'
+import { Plus, Search, User as UserIcon, Send } from 'lucide-react'
+import { motion } from 'framer-motion'
 
 export default function TeamPage() {
   const { user, loading } = useAuth()
@@ -18,6 +20,10 @@ export default function TeamPage() {
   const [keyLabel, setKeyLabel] = useState('Default Key')
   const [inviteEmail, setInviteEmail] = useState('')
   const [copied, setCopied] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [searching, setSearching] = useState(false)
+  const [invitingMsg, setInvitingMsg] = useState('')
 
   useEffect(() => {
     if (!loading && !user) router.replace('/auth/login')
@@ -88,12 +94,54 @@ export default function TeamPage() {
     return 'Just now'
   }
 
+  const handleSearch = async (val: string) => {
+    setSearchQuery(val)
+    if (val.length < 2) {
+      setSearchResults([])
+      return
+    }
+    setSearching(true)
+    try {
+      const res = await apiFetch(`/api/users/search?q=${encodeURIComponent(val)}`)
+      const data = await res.json()
+      setSearchResults(data.users || [])
+    } catch {}
+    setSearching(false)
+  }
+
+  const sendInvite = async (githubUsername: string) => {
+    if (!githubUsername.trim()) return
+    setInvitingMsg('Sending...')
+    try {
+      const res = await apiFetch(`/api/teams/${activeTeam}/invite`, {
+        method: 'POST',
+        body: JSON.stringify({ github_username: githubUsername }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setInvitingMsg(`Success: ${data.message}`)
+        setSearchQuery('')
+        setSearchResults([])
+      } else {
+        setInvitingMsg(`Error: ${data.error}`)
+      }
+    } catch {
+      setInvitingMsg('Failed to send invite')
+    }
+    setTimeout(() => setInvitingMsg(''), 5000)
+  }
+
   if (loading || !user) return null
 
   return (
     <div style={{ minHeight: '100vh' }}>
-      <Navbar />
-      <div style={{ maxWidth: 900, margin: '0 auto', padding: '36px 24px' }}>
+      <Navbar teams={teams} activeTeam={activeTeam} onChangeTeam={setActiveTeam} />
+      <motion.div 
+        initial={{ opacity: 0, y: 15 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3, ease: 'easeOut' }}
+        style={{ maxWidth: 900, margin: '0 auto', padding: '36px 24px' }}
+      >
 
         {/* Header */}
         <div style={{ marginBottom: 36 }}>
@@ -102,27 +150,6 @@ export default function TeamPage() {
             Manage members and API keys for the Graft Companion extension.
           </p>
         </div>
-
-        {/* Team selector */}
-        {teams.length > 1 && (
-          <div style={{ display: 'flex', gap: 8, marginBottom: 28 }}>
-            {teams.map(team => (
-              <button
-                key={team.id}
-                onClick={() => setActiveTeam(team.id)}
-                style={{
-                  padding: '6px 14px', borderRadius: 100,
-                  border: '1px solid', borderColor: activeTeam === team.id ? 'var(--orange)' : 'var(--border)',
-                  background: activeTeam === team.id ? 'var(--orange-glow)' : 'transparent',
-                  color: activeTeam === team.id ? 'var(--orange)' : 'var(--text-2)',
-                  fontSize: 13, fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s',
-                }}
-              >
-                {team.name}
-              </button>
-            ))}
-          </div>
-        )}
 
         {/* ── API Keys ─────────────────────────────────────── */}
         <section style={{ marginBottom: 40 }}>
@@ -213,6 +240,92 @@ export default function TeamPage() {
 
         <hr className="divider" style={{ marginBottom: 40 }} />
 
+        {/* ── Invites ──────────────────────────────────────── */}
+        {isAdmin && (
+          <section style={{ marginBottom: 40 }}>
+            <div style={{ marginBottom: 20 }}>
+              <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Invite Team Members</h2>
+              <p style={{ fontSize: 13, color: 'var(--text-2)' }}>
+                Search existing Graft users or invite someone by GitHub username.
+              </p>
+            </div>
+
+            <div style={{ position: 'relative', maxWidth: 400 }}>
+              <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 8, padding: '4px 12px' }}>
+                <Search size={16} color="var(--text-muted)" style={{ flexShrink: 0 }} />
+                <input
+                  type="text"
+                  placeholder="Type GitHub username..."
+                  value={searchQuery}
+                  onChange={(e) => handleSearch(e.target.value)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'var(--text)',
+                    fontSize: 14,
+                    padding: '8px',
+                    width: '100%',
+                    outline: 'none',
+                  }}
+                />
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => sendInvite(searchQuery)}
+                  disabled={!searchQuery.trim()}
+                  style={{ marginLeft: 8 }}
+                >
+                  <Send size={14} /> Send
+                </button>
+              </div>
+
+              {/* Autocomplete Dropdown */}
+              {(searchResults.length > 0 || searching) && (
+                <div style={{
+                  position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 8,
+                  background: 'var(--bg-surface)', border: '1px solid var(--border)',
+                  borderRadius: 8, overflow: 'hidden', zIndex: 10,
+                  boxShadow: '0 10px 40px rgba(0,0,0,0.5)'
+                }}>
+                  {searching ? (
+                    <div style={{ padding: 12, fontSize: 12, color: 'var(--text-muted)' }}>Searching...</div>
+                  ) : (
+                    searchResults.map(u => (
+                      <div
+                        key={u.id}
+                        onClick={() => sendInvite(u.username)}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px',
+                          cursor: 'pointer', borderBottom: '1px solid var(--border)'
+                        }}
+                        onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg-elevated)')}
+                        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                      >
+                        {u.avatar_url ? (
+                          <img src={u.avatar_url} alt="" style={{ width: 28, height: 28, borderRadius: '50%' }} />
+                        ) : (
+                          <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <UserIcon size={14} />
+                          </div>
+                        )}
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 600 }}>{u.name}</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>@{u.username}</div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+
+              {invitingMsg && (
+                <p style={{ marginTop: 8, fontSize: 12, color: invitingMsg.startsWith('Error') ? 'var(--red)' : 'var(--primary)' }}>
+                  {invitingMsg}
+                </p>
+              )}
+            </div>
+          </section>
+        )}
+
         {/* ── Members ──────────────────────────────────────── */}
         <section>
           <div style={{ marginBottom: 20 }}>
@@ -241,7 +354,7 @@ export default function TeamPage() {
                     Joined {timeSince(member.joined_at)}
                   </div>
                 </div>
-                <span className={`badge ${member.role === 'owner' ? 'badge-orange' : member.role === 'admin' ? 'badge-blue' : 'badge-zinc'}`}>
+                <span className={`badge ${member.role === 'owner' ? 'badge-primary' : member.role === 'admin' ? 'badge-blue' : 'badge-zinc'}`}>
                   {member.role}
                 </span>
               </div>
@@ -249,7 +362,7 @@ export default function TeamPage() {
           </div>
         </section>
 
-      </div>
+      </motion.div>
     </div>
   )
 }

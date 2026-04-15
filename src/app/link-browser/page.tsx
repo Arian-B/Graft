@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth, apiFetch } from '@/lib/auth'
+import { AlertTriangle, XCircle, Check } from 'lucide-react'
 
 /**
  * /link-browser
@@ -61,9 +62,11 @@ export default function LinkBrowserPage() {
   if (status === 'no_id') {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-        <div style={{ textAlign: 'center', maxWidth: 400 }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>⚠️</div>
-          <h1 style={{ fontSize: 20, fontWeight: 700, marginBottom: 10 }}>Missing companion ID</h1>
+        <div className="fade-in" style={{ textAlign: 'center', maxWidth: 400 }}>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+            <AlertTriangle size={48} color="var(--yellow)" strokeWidth={1.5} />
+          </div>
+          <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 12 }}>Invalid Link</h2>
           <p style={{ fontSize: 14, color: 'var(--text-2)', lineHeight: 1.6 }}>
             This page should be opened from the Graft Companion popup.
             Click "Link to Graft account" in the extension, not by visiting this URL directly.
@@ -76,9 +79,11 @@ export default function LinkBrowserPage() {
   if (status === 'error') {
     return (
       <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-        <div style={{ textAlign: 'center', maxWidth: 400 }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>❌</div>
-          <h1 style={{ fontSize: 20, fontWeight: 700, marginBottom: 10 }}>Failed to link browser</h1>
+        <div className="fade-in" style={{ textAlign: 'center', maxWidth: 400 }}>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+            <XCircle size={48} color="var(--red)" strokeWidth={1.5} />
+          </div>
+          <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 12 }}>Link failed</h2>
           <p style={{ fontSize: 14, color: 'var(--text-2)', marginBottom: 24 }}>Something went wrong. Try again from the Companion popup.</p>
           <button className="btn btn-ghost" onClick={() => window.close()}>Close tab</button>
         </div>
@@ -95,13 +100,8 @@ export default function LinkBrowserPage() {
     }}>
       <div style={{ textAlign: 'center', maxWidth: 440 }} className="fade-in">
 
-        <div style={{
-          width: 72, height: 72,
-          background: 'rgba(34,197,94,0.1)', border: '2px solid rgba(34,197,94,0.3)',
-          borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 32, margin: '0 auto 24px',
-        }}>
-          ✓
+        <div style={{ width: 64, height: 64, background: 'var(--primary)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 24px', boxShadow: '0 0 40px var(--primary-glow)' }}>
+          <Check size={32} color="var(--primary-foreground)" strokeWidth={2.5}/>
         </div>
 
         <h1 style={{ fontSize: 24, fontWeight: 700, letterSpacing: '-0.02em', marginBottom: 10, color: '#4ade80' }}>

@@ -2,6 +2,7 @@
 
 import { useSearchParams } from 'next/navigation'
 import { useRouter } from 'next/navigation'
+import { AlertTriangle } from 'lucide-react'
 
 export default function AuthErrorPage() {
   const params = useSearchParams()
@@ -14,7 +15,9 @@ export default function AuthErrorPage() {
       justifyContent: 'center', padding: 24,
     }}>
       <div style={{ textAlign: 'center', maxWidth: 400 }}>
-        <div style={{ fontSize: 48, marginBottom: 20 }}>⚠️</div>
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}>
+          <AlertTriangle size={48} color="var(--red)" strokeWidth={1.5} />
+        </div>
         <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 12 }}>Authentication failed</h1>
         <p style={{
           fontSize: 14, color: 'var(--text-2)', marginBottom: 24, lineHeight: 1.6,

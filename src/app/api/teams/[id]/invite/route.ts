@@ -88,15 +88,19 @@ export async function POST(
     return NextResponse.json({ error: 'You cannot invite yourself' }, { status: 400 })
   }
 
-  // ── Case A: search for existing Graft user by GitHub username ─────────────
-  // We search auth.users via the admin client since it has access to raw_user_meta_data
+  // ── Always store pending invite for the inbox model ─────────────
+  const adminDb = createAdminClient()
+  
+  // Check if already a member
+  // (We need to check team_members but wait, we only have github_username, not user.id
+  // but if they try to invite someone, it goes to team_invites. If the user is already in team_members, 
+  // maybe we don't know easily without searching auth.users first. Let's do a quick lookup)
   const { data: existingUsers } = await adminDb.auth.admin.listUsers()
   const match = existingUsers?.users?.find(
     (u: any) => u.user_metadata?.user_name?.toLowerCase() === github_username.toLowerCase()
   )
 
   if (match) {
-    // Check if already a member
     const { data: existing } = await db
       .from('team_members')
       .select('id')
@@ -107,22 +111,8 @@ export async function POST(
     if (existing) {
       return NextResponse.json({ error: `@${github_username} is already a member of this team` }, { status: 409 })
     }
-
-    // Add directly
-    const { error: insertError } = await adminDb
-      .from('team_members')
-      .insert({ team_id: params.id, user_id: match.id, role })
-
-    if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 })
-
-    return NextResponse.json({
-      status: 'added',
-      message: `@${github_username} was added to the team immediately (they already have a Graft account).`,
-      role,
-    })
   }
 
-  // ── Case B: user hasn't signed up yet — store pending invite ─────────────
   const { error: inviteError } = await adminDb
     .from('team_invites')
     .upsert(
@@ -134,7 +124,9 @@ export async function POST(
 
   return NextResponse.json({
     status: 'pending',
-    message: `@${github_username} hasn't signed up for Graft yet. They'll be added to this team automatically when they first log in.`,
+    message: match 
+       ? `Invite sent! @${github_username} will see it in their Graft inbox.`
+       : `@${github_username} hasn't signed up yet. They will receive the invite when they login.`,
     role,
   })
 }

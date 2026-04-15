@@ -6,6 +6,7 @@ import dynamic from 'next/dynamic'
 import Navbar from '@/components/layout/Navbar'
 import { useAuth, apiFetch } from '@/lib/auth'
 import type { ScriptWithVersion, ScriptVersion } from '@/lib/types'
+import { ArrowLeft, FlaskConical, Send, Check, X, Rocket, History, Settings, BarChart2 } from 'lucide-react'
 
 const MonacoEditor = dynamic(() => import('@monaco-editor/react'), { ssr: false })
 
@@ -24,6 +25,7 @@ export default function EditorPage() {
   const [versions, setVersions] = useState<(ScriptVersion & { is_current: boolean })[]>([])
   const [activeTab, setActiveTab] = useState<EditorTab>('versions')
   const [analytics, setAnalytics] = useState<any>(null)
+  const [role, setRole] = useState<string | null>(null)
   const [configJson, setConfigJson] = useState('')
   const [savingConfig, setSavingConfig] = useState(false)
   const [isDirty, setIsDirty] = useState(false)
@@ -39,13 +41,21 @@ export default function EditorPage() {
   }, [user, scriptId])
 
   const loadScript = async () => {
-    const res = await apiFetch(`/api/scripts/${scriptId}`)
+    const [res, meRes] = await Promise.all([
+      apiFetch(`/api/scripts/${scriptId}`),
+      apiFetch('/api/me')
+    ])
     const data = await res.json()
+    const meData = await meRes.json()
+    
     if (data.script) {
       setScript(data.script)
       const currentCode = data.script.current_version?.code || ''
       setCode(currentCode)
       setConfigJson(JSON.stringify(data.script.remote_config || {}, null, 2))
+
+      const team = meData.teams?.find((t: any) => t.id === data.script.team_id)
+      if (team) setRole(team.role)
     }
   }
 
@@ -61,22 +71,33 @@ export default function EditorPage() {
     setAnalytics(data)
   }
 
-  const deploy = async () => {
-    if (!code.trim()) return
+  const doAction = async (action: 'deploy' | 'test' | 'submit' | 'approve' | 'reject', extraBody: Record<string, any> = {}) => {
+    // Both Direct Deploy and Test endpoints expect the current draft 'code'
+    // Submit, Approve, Reject just transition the state.
+    if ((action === 'deploy' || action === 'test') && !code.trim()) return
+    
     setDeploying(true)
     setDeployMsg('')
     try {
-      const res = await apiFetch(`/api/scripts/${scriptId}/deploy`, {
+      const res = await apiFetch(`/api/scripts/${scriptId}/${action}`, {
         method: 'POST',
-        body: JSON.stringify({ code }),
+        body: JSON.stringify({ code, ...extraBody }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error)
-      setDeployMsg(data.message)
-      setIsDirty(false)
+      if (!res.ok) throw new Error(data.error || data.code)
+      setDeployMsg(data.message || 'Action completed successfully.')
+      
+      // If we directly deployed, or if it's no longer just a draft, mark clean
+      if (action === 'deploy' || action === 'test') setIsDirty(false)
+      
       await Promise.all([loadScript(), loadVersions()])
     } catch (err: any) {
-      setDeployMsg(`Error: ${err.message}`)
+      // Small user-friendly hint
+      if (err.message === 'NO_BROWSER_LINKED') {
+         setDeployMsg('Error: Open Companion extension and link your browser first!')
+      } else {
+         setDeployMsg(err.message.startsWith('Error') ? err.message : `Error: ${err.message}`)
+      }
     }
     setDeploying(false)
   }
@@ -145,7 +166,9 @@ export default function EditorPage() {
         display: 'flex', alignItems: 'center', gap: 16, height: 52,
         flexShrink: 0,
       }}>
-        <button className="btn btn-ghost btn-sm" onClick={() => router.push('/dashboard')}>← Dashboard</button>
+        <button className="btn btn-ghost btn-sm" onClick={() => router.push('/dashboard')}>
+           <ArrowLeft size={14} /> Dashboard
+        </button>
         <hr className="divider" style={{ width: 1, height: 20, margin: 0 }} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <span style={{ fontSize: 15, fontWeight: 600 }}>{script.name}</span>
@@ -165,24 +188,54 @@ export default function EditorPage() {
             <span style={{
               fontSize: 12,
               color: deployMsg.startsWith('Error') ? 'var(--red)' : 'var(--green)',
-              maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+              maxWidth: 360, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
             }}>
               {deployMsg}
             </span>
           )}
           {isDirty && (
-            <span style={{ fontSize: 12, color: 'var(--yellow)' }}>● Unsaved changes</span>
+            <span style={{ fontSize: 12, color: 'var(--yellow)' }}>● Unsaved code changes</span>
           )}
-          <button
-            className="btn btn-primary"
-            onClick={deploy}
-            disabled={deploying}
-            style={{ minWidth: 100 }}
-          >
-            {deploying ? (
-              <><span className="dot dot-pulse" style={{ background: 'white' }} /> Deploying...</>
-            ) : '🚀 Deploy'}
-          </button>
+
+          {script.status === 'live' ? (
+             <button className="btn btn-secondary btn-sm" disabled={deploying} onClick={() => doAction('test')}><FlaskConical size={14}/> Test new changes</button>
+          ) : script.status === 'pending_review' ? (
+             <>
+                {['admin', 'owner'].includes(role || '') ? (
+                  <>
+                    <button className="btn btn-secondary btn-sm" disabled={deploying} onClick={() => {
+                        const reason = prompt("Enter rejection reason:");
+                        if (reason) doAction('reject', { reason });
+                    }}><X size={14}/> Reject</button>
+                    <button className="btn btn-primary btn-sm" disabled={deploying} onClick={() => doAction('approve')}><Check size={14}/> Approve (Go Live)</button>
+                  </>
+                ) : (
+                  <span style={{ fontSize: 12, color: 'var(--primary)' }}>Pending approval...</span>
+                )}
+             </>
+          ) : (
+             <>
+               <button className="btn btn-secondary btn-sm" disabled={deploying} onClick={() => doAction('test')}><FlaskConical size={14}/> Test on my browser</button>
+               {script.status === 'testing' && script.owner_id === user.id && (
+                 <button className="btn btn-primary btn-sm" disabled={deploying} onClick={() => doAction('submit')}><Send size={14}/> Submit for Review</button>
+               )}
+             </>
+          )}
+
+          {role === 'owner' && script.status !== 'live' && (
+             <button
+               className="btn btn-ghost btn-sm"
+               style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+               onClick={() => {
+                 if (confirm("Direct deploy skips peer review and goes live to all teammates instantly. Are you sure?")) {
+                   doAction('deploy')
+                 }
+               }}
+               disabled={deploying}
+             >
+               <Rocket size={14}/> Direct Deploy
+             </button>
+          )}
         </div>
       </div>
 
@@ -235,7 +288,11 @@ export default function EditorPage() {
                   textTransform: 'capitalize', transition: 'all 0.15s',
                 }}
               >
-                {tab === 'versions' ? '📋 History' : tab === 'config' ? '⚙️ Config' : '📊 Stats'}
+                <span style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
+                  {tab === 'versions' ? <><History size={14}/> History</> : 
+                   tab === 'config' ? <><Settings size={14}/> Config</> : 
+                   <><BarChart2 size={14}/> Stats</>}
+                </span>
               </button>
             ))}
           </div>
@@ -253,14 +310,14 @@ export default function EditorPage() {
                   <div key={v.id} style={{
                     padding: '10px 12px',
                     background: v.is_current ? 'var(--bg-elevated)' : 'var(--bg-surface)',
-                    border: `1px solid ${v.is_current ? 'var(--orange)' : 'var(--border)'}`,
+                    border: `1px solid ${v.is_current ? 'var(--primary)' : 'var(--border)'}`,
                     borderRadius: 8,
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                   }}>
                     <div>
-                      <div style={{ fontSize: 13, fontWeight: 600, fontFamily: 'monospace', color: v.is_current ? 'var(--orange)' : 'var(--text)' }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, fontFamily: 'monospace', color: v.is_current ? 'var(--primary)' : 'var(--text)' }}>
                         v{v.version_number}
-                        {v.is_current && <span style={{ fontSize: 10, marginLeft: 6, color: 'var(--orange)' }}>LIVE</span>}
+                        {v.is_current && <span style={{ fontSize: 10, marginLeft: 6, color: 'var(--primary)' }}>LIVE</span>}
                       </div>
                       <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
                         {timeSince(v.deployed_at)}

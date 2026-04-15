@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createUserClient, extractToken } from '@/lib/supabase'
+import { createUserClient, createAdminClient, extractToken } from '@/lib/supabase'
 
 /**
  * GET /api/scripts/[id]/analytics
@@ -23,15 +23,29 @@ export async function GET(
   const { data: { user }, error: authError } = await db.auth.getUser()
   if (authError || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // Verify user has access to this script (RLS handles this)
-  const { data: script, error: scriptError } = await db
+  const adminDb = createAdminClient()
+
+  // 1. Fetch script to know its team
+  const { data: script, error: scriptError } = await adminDb
     .from('scripts')
-    .select('id, name')
+    .select('id, name, team_id')
     .eq('id', params.id)
     .single()
 
   if (scriptError || !script) {
     return NextResponse.json({ error: 'Script not found' }, { status: 404 })
+  }
+
+  // 2. Verify user has access to this script's team
+  const { data: membership } = await adminDb
+    .from('team_members')
+    .select('id')
+    .eq('team_id', script.team_id)
+    .eq('user_id', user.id)
+    .single()
+
+  if (!membership) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
   const { searchParams } = new URL(request.url)
@@ -41,7 +55,7 @@ export async function GET(
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
 
   // Build query
-  let query = db
+  let query = adminDb
     .from('analytics_events')
     .select('id, event_type, page_url, companion_id, metadata, created_at')
     .eq('script_id', params.id)

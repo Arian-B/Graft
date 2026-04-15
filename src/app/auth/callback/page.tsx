@@ -3,78 +3,85 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { getSupabaseBrowser } from '@/lib/auth'
+import { AlertTriangle } from 'lucide-react'
 
 /**
  * /auth/callback — Client-side OAuth callback handler
  *
- * Supabase redirects here after GitHub OAuth completes.
- * The browser client exchanges the code for a session and stores it
- * in localStorage automatically. Then we redirect to the dashboard.
- *
- * This MUST be client-side. If the session exchange happens server-side,
- * the browser never receives the session and the user appears logged out.
+ * Supabase redirect auth flows (like signInWithOAuth) typically bring the
+ * user back to this URL. The Supabase client automatically looks at the URL
+ * hash/query parms, extracts the auth token, and persists the session.
  */
 export default function AuthCallbackPage() {
   const router = useRouter()
-  const [status, setStatus] = useState<'loading' | 'error'>('loading')
-  const [errorMsg, setErrorMsg] = useState('')
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
   useEffect(() => {
+    // Check if we already have a session, if yes, redirect to dashboard.
+    // If there's an error in the URL (e.g., ?error=access_denied), we show it.
     const supabase = getSupabaseBrowser()
 
-    // Supabase puts the auth code in the URL as ?code=xxx
-    const code = new URLSearchParams(window.location.search).get('code')
-    const error = new URLSearchParams(window.location.search).get('error')
-    const errorDescription = new URLSearchParams(window.location.search).get('error_description')
+    // Parms can be in hash or query
+    const hashParams = new URLSearchParams(window.location.hash.substring(1))
+    const searchParams = new URLSearchParams(window.location.search)
 
-    if (error) {
-      setErrorMsg(errorDescription || error)
-      setStatus('error')
+    const urlError = hashParams.get('error_description') || searchParams.get('error_description')
+      || hashParams.get('error') || searchParams.get('error')
+
+    if (urlError) {
+      setErrorMsg(decodeURIComponent(urlError.replace(/\+/g, ' ')))
       return
     }
 
-    if (!code) {
-      // No code in URL — might be an implicit flow redirect with hash
-      // Supabase browser client auto-handles this
-      supabase.auth.getSession().then(({ data: { session } }) => {
-        if (session) {
-          router.replace('/dashboard')
-        } else {
-          setErrorMsg('No auth code or session found in callback URL.')
-          setStatus('error')
-        }
-      })
-      return
-    }
-
-    // Exchange code for session — browser client stores it in localStorage
-    supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
+    // Try picking up the session
+    supabase.auth.getSession().then(({ data, error }) => {
       if (error) {
-        console.error('[Graft Auth] Code exchange failed:', error.message)
         setErrorMsg(error.message)
-        setStatus('error')
-        return
+      } else if (data.session) {
+        // Successfully logged in via link
+        router.replace('/dashboard')
+      } else {
+        // No session found, and no explicit error. Give the client a sec
+        // to process URL fragements just in case onAuthStateChange picks it up.
+        // Or if nothing happens, we send them back to login.
+        const hash = window.location.hash
+        if (!hash || !hash.includes('access_token')) {
+          router.replace('/auth/login')
+        }
       }
-      // Session is now stored; redirect to dashboard
-      router.replace('/dashboard')
     })
+
+    // Listen for auth state change which triggers when token is parsed
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session) {
+        router.replace('/dashboard')
+      }
+    })
+
+    return () => {
+      subscription.unsubscribe()
+    }
   }, [router])
 
-  if (status === 'error') {
+  if (errorMsg) {
     return (
       <div style={{
         minHeight: '100vh', display: 'flex', alignItems: 'center',
         justifyContent: 'center', flexDirection: 'column', gap: 16, padding: 24,
       }}>
-        <div style={{ fontSize: 48 }}>⚠️</div>
-        <h1 style={{ fontSize: 20, fontWeight: 700 }}>Authentication failed</h1>
-        <p style={{
-          fontSize: 13, color: 'var(--text-2)', background: 'var(--bg-surface)',
-          border: '1px solid var(--border)', borderRadius: 8, padding: '10px 16px',
-          fontFamily: 'JetBrains Mono, monospace', maxWidth: 400, textAlign: 'center',
-        }}>
-          {errorMsg}
-        </p>
+        <div style={{ textAlign: 'center', maxWidth: 400 }}>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 20 }}>
+            <AlertTriangle size={48} color="var(--red)" strokeWidth={1.5} />
+          </div>
+          <h1 style={{ fontSize: 22, fontWeight: 700, marginBottom: 12 }}>Authentication failed</h1>
+          <p style={{
+            fontSize: 13, color: 'var(--text-2)', background: 'var(--bg-surface)',
+            border: '1px solid var(--border)', borderRadius: 8, padding: '10px 16px',
+            fontFamily: 'JetBrains Mono, monospace', maxWidth: 400, textAlign: 'center',
+          }}>
+            {errorMsg}
+          </p>
+        </div>
         <button className="btn btn-primary" onClick={() => router.push('/')}>
           Back to home
         </button>
@@ -82,20 +89,23 @@ export default function AuthCallbackPage() {
     )
   }
 
+  // Loading state while auth token is parsing from URL
   return (
     <div style={{
       minHeight: '100vh', display: 'flex', alignItems: 'center',
-      justifyContent: 'center', flexDirection: 'column', gap: 16,
+      justifyContent: 'center', flexDirection: 'column', gap: 16, padding: 24,
     }}>
-      <div style={{
-        width: 40, height: 40,
-        border: '3px solid var(--border)',
-        borderTopColor: 'var(--orange)',
-        borderRadius: '50%',
-        animation: 'spin 0.8s linear infinite',
+      <div className="spinner" style={{
+        width: 32, height: 32, borderRadius: '50%',
+        border: '3px solid var(--border)', borderTopColor: 'var(--primary)',
+        animation: 'spin 1s linear infinite'
       }} />
-      <p style={{ fontSize: 14, color: 'var(--text-2)' }}>Completing sign in...</p>
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <p style={{ fontSize: 14, color: 'var(--text-2)', fontWeight: 500 }}>
+        Authenticating...
+      </p>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+      `}</style>
     </div>
   )
 }

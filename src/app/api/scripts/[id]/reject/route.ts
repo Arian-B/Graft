@@ -19,7 +19,9 @@ export async function POST(
   const { data: { user }, error: authError } = await db.auth.getUser()
   if (authError || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { data: script } = await db
+  const adminDb = createAdminClient()
+
+  const { data: script } = await adminDb
     .from('scripts')
     .select('id, name, team_id, status')
     .eq('id', params.id)
@@ -35,7 +37,7 @@ export async function POST(
   }
 
   // Verify caller is admin or owner
-  const { data: membership } = await db
+  const { data: membership } = await adminDb
     .from('team_members')
     .select('role')
     .eq('team_id', script.team_id)
@@ -59,7 +61,6 @@ export async function POST(
     )
   }
 
-  const adminDb = createAdminClient()
   const { error } = await adminDb
     .from('scripts')
     .update({

@@ -46,7 +46,7 @@ export default function ProfilePage() {
   }
 
   const roleColor = (role: string) => {
-    if (role === 'owner') return 'badge-orange'
+    if (role === 'owner') return 'badge-primary'
     if (role === 'admin') return 'badge-blue'
     return 'badge-zinc'
   }
@@ -203,9 +203,9 @@ export default function ProfilePage() {
                     >
                       <div style={{
                         width: 36, height: 36, borderRadius: 9,
-                        background: 'linear-gradient(135deg, var(--orange), var(--orange-dark))',
+                        background: 'var(--primary)',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        fontSize: 14, fontWeight: 800, color: 'white', flexShrink: 0,
+                        fontSize: 14, fontWeight: 800, color: 'var(--primary-foreground)', flexShrink: 0,
                       }}>
                         {team.name.charAt(0).toUpperCase()}
                       </div>

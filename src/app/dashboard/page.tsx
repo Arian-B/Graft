@@ -6,6 +6,8 @@ import Link from 'next/link'
 import Navbar from '@/components/layout/Navbar'
 import { useAuth, apiFetch } from '@/lib/auth'
 import type { ScriptWithVersion, Team } from '@/lib/types'
+import { Rocket, FileCode, Plus } from 'lucide-react'
+import { motion } from 'framer-motion'
 
 export default function DashboardPage() {
   const { user, loading } = useAuth()
@@ -19,6 +21,7 @@ export default function DashboardPage() {
   const [teamName, setTeamName] = useState('')
   const [teamSlug, setTeamSlug] = useState('')
   const [creating, setCreating] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
 
   // Redirect if not logged in
   useEffect(() => {
@@ -55,18 +58,28 @@ export default function DashboardPage() {
   }, [teamName])
 
   const createTeam = async () => {
-    if (!teamName.trim() || !teamSlug.trim()) return
+    setCreateError(null)
+    if (!teamName.trim() || !teamSlug.trim()) {
+      setCreateError("Name and slug are required")
+      return
+    }
     setCreating(true)
-    const res = await apiFetch('/api/teams', {
-      method: 'POST',
-      body: JSON.stringify({ name: teamName.trim(), slug: teamSlug.trim() }),
-    })
-    const data = await res.json()
-    if (data.team) {
-      setTeams(prev => [...prev, { ...data.team, role: 'owner' }])
-      setActiveTeam(data.team.id)
-      setShowCreateTeam(false)
-      setTeamName('')
+    try {
+      const res = await apiFetch('/api/teams', {
+        method: 'POST',
+        body: JSON.stringify({ name: teamName.trim(), slug: teamSlug.trim() }),
+      })
+      const data = await res.json()
+      if (res.ok && data.team) {
+        setTeams(prev => [...prev, { ...data.team, role: 'owner' }])
+        setActiveTeam(data.team.id)
+        setShowCreateTeam(false)
+        setTeamName('')
+      } else {
+        setCreateError(data.error || 'Failed to create team')
+      }
+    } catch (err: any) {
+      setCreateError(err.message || 'Network error')
     }
     setCreating(false)
   }
@@ -98,9 +111,14 @@ export default function DashboardPage() {
 
   return (
     <div style={{ minHeight: '100vh' }}>
-      <Navbar />
+      <Navbar teams={teams} activeTeam={activeTeam} onChangeTeam={setActiveTeam} />
 
-      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '32px 24px' }}>
+      <motion.div 
+        initial={{ opacity: 0, y: 15 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3, ease: 'easeOut' }}
+        style={{ maxWidth: 1200, margin: '0 auto', padding: '32px 24px' }}
+      >
 
         {/* ── Header ─────────────────────────────── */}
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 32 }}>
@@ -115,49 +133,19 @@ export default function DashboardPage() {
           </div>
           <div style={{ display: 'flex', gap: 10 }}>
             <button className="btn btn-ghost btn-sm" onClick={() => setShowCreateTeam(true)}>
-              + New team
+              <Plus size={14}/> New team
             </button>
             {activeTeam && (
               <Link
                 href={`/editor/new?team=${activeTeam}`}
                 className="btn btn-primary"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
               >
-                + New script
+                <Plus size={14}/> New script
               </Link>
             )}
           </div>
         </div>
-
-        {/* ── Team Selector ───────────────────────── */}
-        {teams.length > 0 && (
-          <div style={{ display: 'flex', gap: 8, marginBottom: 28, flexWrap: 'wrap' }}>
-            {teams.map(team => (
-              <button
-                key={team.id}
-                onClick={() => setActiveTeam(team.id)}
-                style={{
-                  padding: '6px 14px',
-                  borderRadius: 100,
-                  border: '1px solid',
-                  borderColor: activeTeam === team.id ? 'var(--orange)' : 'var(--border)',
-                  background: activeTeam === team.id ? 'var(--orange-glow)' : 'transparent',
-                  color: activeTeam === team.id ? 'var(--orange)' : 'var(--text-2)',
-                  fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                  transition: 'all 0.15s',
-                }}
-              >
-                {team.name}
-                <span style={{
-                  marginLeft: 6, fontSize: 10,
-                  color: activeTeam === team.id ? 'var(--orange)' : 'var(--text-muted)',
-                  textTransform: 'uppercase', letterSpacing: '0.05em',
-                }}>
-                  {team.role}
-                </span>
-              </button>
-            ))}
-          </div>
-        )}
 
         {/* ── No teams state ──────────────────────── */}
         {teams.length === 0 && !showCreateTeam && (
@@ -165,7 +153,9 @@ export default function DashboardPage() {
             textAlign: 'center', padding: '80px 24px',
             border: '1px dashed var(--border)', borderRadius: 16,
           }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>🚀</div>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+              <Rocket size={48} color="var(--primary)" strokeWidth={1.5} />
+            </div>
             <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 10 }}>Create your first team</h2>
             <p style={{ fontSize: 14, color: 'var(--text-2)', marginBottom: 24, maxWidth: 380, margin: '0 auto 24px' }}>
               Teams are how Graft groups scripts together.
@@ -217,8 +207,9 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              <div style={{ display: 'flex', gap: 10, marginTop: 24, justifyContent: 'flex-end' }}>
-                <button className="btn btn-ghost" onClick={() => setShowCreateTeam(false)}>Cancel</button>
+              <div style={{ display: 'flex', gap: 10, marginTop: 24, justifyContent: 'flex-end', alignItems: 'center' }}>
+                {createError && <span style={{ color: 'var(--red)', fontSize: 13, marginRight: 'auto' }}>{createError}</span>}
+                <button className="btn btn-ghost" onClick={() => { setShowCreateTeam(false); setCreateError(null); }}>Cancel</button>
                 <button className="btn btn-primary" onClick={createTeam} disabled={creating || !teamName.trim()}>
                   {creating ? 'Creating...' : 'Create team'}
                 </button>
@@ -233,7 +224,9 @@ export default function DashboardPage() {
             textAlign: 'center', padding: '80px 24px',
             border: '1px dashed var(--border)', borderRadius: 16,
           }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>📝</div>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+              <FileCode size={48} color="var(--primary)" strokeWidth={1.5} />
+            </div>
             <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 10 }}>No scripts yet</h2>
             <p style={{ fontSize: 14, color: 'var(--text-2)', marginBottom: 24 }}>
               Create your first browser script to start automating.
@@ -257,7 +250,7 @@ export default function DashboardPage() {
             ))}
           </div>
         )}
-      </div>
+      </motion.div>
     </div>
   )
 }

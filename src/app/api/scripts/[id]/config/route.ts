@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createUserClient, extractToken } from '@/lib/supabase'
+import { createUserClient, createAdminClient, extractToken } from '@/lib/supabase'
 import type { UpdateConfigBody } from '@/lib/types'
 
 // GET /api/scripts/[id]/config — Get the remote config for a script
@@ -17,7 +17,9 @@ export async function GET(
   const { data: { user }, error: authError } = await db.auth.getUser()
   if (authError || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { data: script, error } = await db
+  const adminDb = createAdminClient()
+
+  const { data: script, error } = await adminDb
     .from('scripts')
     .select('id, remote_config, updated_at')
     .eq('id', params.id)
@@ -54,7 +56,26 @@ export async function PUT(
     return NextResponse.json({ error: 'config must be a JSON object' }, { status: 400 })
   }
 
-  const { data: script, error } = await db
+  const adminDb = createAdminClient()
+
+  // Verify access or ownership before update via adminDb
+  const { data: scriptCheck } = await adminDb
+    .from('scripts')
+    .select('team_id')
+    .eq('id', params.id)
+    .single()
+  
+  if (scriptCheck) {
+     const { data: membership } = await adminDb
+       .from('team_members')
+       .select('id')
+       .eq('team_id', scriptCheck.team_id)
+       .eq('user_id', user.id)
+       .single()
+     if (!membership) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
+  const { data: script, error } = await adminDb
     .from('scripts')
     .update({ remote_config: body.config })
     .eq('id', params.id)
