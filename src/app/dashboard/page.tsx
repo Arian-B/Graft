@@ -6,7 +6,7 @@ import Link from 'next/link'
 import Navbar from '@/components/layout/Navbar'
 import { useAuth, apiFetch } from '@/lib/auth'
 import type { ScriptWithVersion, Team } from '@/lib/types'
-import { Rocket, FileCode, Plus } from 'lucide-react'
+import { Rocket, FileCode, Plus, Key, Trash2, Copy, Check, RefreshCw } from 'lucide-react'
 import { motion } from 'framer-motion'
 
 export default function DashboardPage() {
@@ -22,6 +22,15 @@ export default function DashboardPage() {
   const [teamSlug, setTeamSlug] = useState('')
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
+  // API key state
+  const [apiKeys, setApiKeys] = useState<any[]>([])
+  const [newKey, setNewKey] = useState<string | null>(null)
+  const [keyCopied, setKeyCopied] = useState(false)
+  const [generatingKey, setGeneratingKey] = useState(false)
+  const [keyError, setKeyError] = useState<string | null>(null)
+
+  // Derived — always in sync with teams state, no separate setState needed
+  const activeRole = teams.find(t => t.id === activeTeam)?.role || null
 
   // Redirect if not logged in
   useEffect(() => {
@@ -40,7 +49,7 @@ export default function DashboardPage() {
       })
   }, [user])
 
-  // Load scripts when team changes
+  // Load scripts + API keys when team changes
   useEffect(() => {
     if (!activeTeam) return
     setScriptsLoading(true)
@@ -50,7 +59,45 @@ export default function DashboardPage() {
         setScripts(data.scripts || [])
         setScriptsLoading(false)
       })
+    // Load API keys
+    apiFetch(`/api/teams/${activeTeam}/keys`)
+      .then(r => r.json())
+      .then(data => setApiKeys(data.keys || []))
   }, [activeTeam])
+
+  const generateKey = async () => {
+    if (!activeTeam) return
+    setGeneratingKey(true)
+    setKeyError(null)
+    try {
+      const res = await apiFetch(`/api/teams/${activeTeam}/keys`, {
+        method: 'POST',
+        body: JSON.stringify({ name: 'Companion Key' }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setNewKey(data.key)
+        setApiKeys(prev => [data.record, ...prev])
+      } else {
+        setKeyError(data.error || 'Failed to generate key')
+      }
+    } catch (err: any) {
+      setKeyError(err.message || 'Network error')
+    }
+    setGeneratingKey(false)
+  }
+
+  const revokeKey = async (keyId: string) => {
+    if (!activeTeam || !confirm('Revoke this key? The Companion extension will disconnect.')) return
+    await apiFetch(`/api/teams/${activeTeam}/keys/${keyId}`, { method: 'DELETE' })
+    setApiKeys(prev => prev.filter(k => k.id !== keyId))
+  }
+
+  const copyKey = async (key: string) => {
+    await navigator.clipboard.writeText(key)
+    setKeyCopied(true)
+    setTimeout(() => setKeyCopied(false), 2000)
+  }
 
   // Auto-fill slug from name
   useEffect(() => {
@@ -248,6 +295,143 @@ export default function DashboardPage() {
             {scripts.map(script => (
               <ScriptCard key={script.id} script={script} onToggle={toggleScript} />
             ))}
+          </div>
+        )}
+
+        {/* ── Companion API Key Section ────────────── */}
+        {activeTeam && (
+          <div style={{ marginTop: 48 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <Key size={18} color="var(--primary)" />
+                <div>
+                  <h2 style={{ fontSize: 16, fontWeight: 700 }}>Companion API Key</h2>
+                  <p style={{ fontSize: 12, color: 'var(--text-2)', marginTop: 2 }}>
+                    Paste this key into the Companion extension popup to connect your browser.
+                  </p>
+                </div>
+              </div>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={generateKey}
+                disabled={generatingKey}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              >
+                <RefreshCw size={13} />
+                {generatingKey ? 'Generating...' : 'Generate new key'}
+              </button>
+            </div>
+            {keyError && (
+              <p style={{ color: 'var(--red)', fontSize: 13, marginBottom: 12 }}>
+                Error: {keyError}
+              </p>
+            )}
+
+            {apiKeys.length === 0 ? (
+              <div style={{
+                padding: '24px',
+                border: '1px dashed var(--border)',
+                borderRadius: 12,
+                textAlign: 'center',
+                color: 'var(--text-2)',
+                fontSize: 13,
+              }}>
+                No API keys yet.
+                {['owner', 'admin'].includes(activeRole || '') && (
+                  <> Click <strong>"Generate new key"</strong> above to create one.</>
+                )}
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {apiKeys.map(key => (
+                  <div key={key.id} style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '12px 16px',
+                    background: 'var(--bg-surface)',
+                    border: '1px solid var(--border)',
+                    borderRadius: 10,
+                    gap: 12,
+                  }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 600 }}>
+                        Companion Key · <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: 12 }}>
+                          Created {new Date(key.created_at).toLocaleDateString()}
+                        </span>
+                      </div>
+                      <code style={{
+                        fontSize: 12, color: 'var(--text-muted)',
+                        fontFamily: 'JetBrains Mono, monospace',
+                      }}>
+                        {key.key_prefix ? `${key.key_prefix}••••••••••••••••••••••••••••••••••••••` : 'graft_••••••••••••••••••••••••••••••••••••••••••••'}
+                      </code>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                        {key.last_used_at
+                          ? `Last used ${new Date(key.last_used_at).toLocaleDateString()}`
+                          : 'Never used'}
+                      </span>
+                      {['owner', 'admin'].includes(activeRole || '') && (
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          style={{ color: 'var(--red)', padding: '4px 8px' }}
+                          onClick={() => revokeKey(key.id)}
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── New Key Modal ────────────────────────── */}
+        {newKey && (
+          <div style={{
+            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 300, padding: 24,
+          }}>
+            <div className="graft-card fade-in" style={{ width: '100%', maxWidth: 480, padding: 28 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                <Key size={20} color="var(--primary)" />
+                <h2 style={{ fontSize: 18, fontWeight: 700 }}>Your new API key</h2>
+              </div>
+              <p style={{ fontSize: 13, color: 'var(--yellow)', marginBottom: 16, lineHeight: 1.5 }}>
+                ⚠ Copy this key now. It will never be shown again.
+              </p>
+              <div style={{
+                background: '#050505',
+                border: '1px solid var(--border)',
+                borderRadius: 8,
+                padding: '12px 16px',
+                fontFamily: 'JetBrains Mono, monospace',
+                fontSize: 13,
+                wordBreak: 'break-all',
+                color: 'var(--primary)',
+                marginBottom: 20,
+              }}>
+                {newKey}
+              </div>
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <button
+                  className="btn btn-ghost"
+                  onClick={() => { setNewKey(null); setKeyCopied(false) }}
+                >
+                  Close
+                </button>
+                <button
+                  className="btn btn-primary"
+                  onClick={() => copyKey(newKey)}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                >
+                  {keyCopied ? <><Check size={14}/> Copied!</> : <><Copy size={14}/> Copy key</>}
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </motion.div>

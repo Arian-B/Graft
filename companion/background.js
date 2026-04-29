@@ -11,8 +11,8 @@
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-// Change to http://localhost:3000 for local dev
-const GRAFT_API_BASE           = 'https://graft.vercel.app'
+// Change to https://graft.vercel.app for production
+const GRAFT_API_BASE           = 'http://localhost:3000'
 const SYNC_INTERVAL_MINUTES    = 0.5   // 30 seconds
 const ANALYTICS_FLUSH_MINUTES  = 1
 const ALARM_SYNC               = 'graft-sync'
@@ -141,7 +141,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       metadata:     message.metadata || {},
     })
     sendResponse({ queued: true })
-    return true
+    return  // synchronous — no need for return true
   }
 
   if (message.type === 'GRAFT_GET_STATUS') {
@@ -161,6 +161,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     getCompanionId().then(id => sendResponse({ companion_id: id }))
     return true
   }
+  if (message.type === 'GRAFT_EXECUTE_IN_MAIN') {
+    // Execute user script in the page's MAIN world via scripting API.
+    // This bypasses the extension's CSP restriction on unsafe-eval.
+    // The content script can't call chrome.scripting directly, so it delegates here.
+    if (!sender.tab?.id) { sendResponse({ ok: false, error: 'No tab id' }); return }
+    chrome.scripting.executeScript({
+      target: { tabId: sender.tab.id },
+      world:  'MAIN',
+      func:   (code, config) => {
+        // This function runs in the PAGE's main world — page CSP applies, not extension's
+        try {
+          // eslint-disable-next-line no-new-func
+          new Function('remoteConfig', code)(config)
+        } catch (e) {
+          console.error('[Graft Script Error]', e)
+        }
+      },
+      args: [message.code, message.remoteConfig || {}],
+    }).then(() => sendResponse({ ok: true }))
+      .catch(err => sendResponse({ ok: false, error: err.message }))
+    return true // async response
+  }
+
 })
 
 // ─── Alarms ───────────────────────────────────────────────────────────────────

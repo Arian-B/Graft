@@ -39,9 +39,9 @@
     try {
       // Convert Chrome match pattern to regex
       const escaped = pattern
-        .replace(/[.+^${}()|[\]\\]/g, '\\$&') // escape regex special chars
-        .replace(/\\\*/g, '.*')                // * → .*
-        .replace(/\\\?/g, '.')                 // ? → .
+        .replace(/[.+^${}()|[\]\\]/g, '\\$&') // escape regex special chars (but NOT * or ?)
+        .replace(/\*/g, '.*')                  // bare * → .* (was wrongly looking for \*)
+        .replace(/\?/g, '.')                   // bare ? → .
 
       const regex = new RegExp('^' + escaped + '$')
       return regex.test(url)
@@ -60,38 +60,27 @@
   // The script receives `remoteConfig` as its only argument.
 
   function executeScript(script) {
-    try {
-      // eslint-disable-next-line no-new-func
-      const fn = new Function('remoteConfig', script.code)
-      fn(script.remote_config || {})
-
-      // Report success to background
-      chrome.runtime.sendMessage({
-        type: 'GRAFT_ANALYTICS_EVENT',
-        script_id: script.id,
-        event_type: 'script_fired',
-        page_url: window.location.href,
-        companion_id: COMPANION_ID,
-        metadata: { version: script.version },
-      }).catch(() => {})
-
-    } catch (err) {
-      console.error(`[Graft] Script "${script.name}" threw an error:`, err)
-
-      // Report error to background
-      chrome.runtime.sendMessage({
-        type: 'GRAFT_ANALYTICS_EVENT',
-        script_id: script.id,
-        event_type: 'script_error',
-        page_url: window.location.href,
-        companion_id: COMPANION_ID,
-        metadata: {
-          version: script.version,
-          error: err.message,
-          stack: err.stack?.substring(0, 500),
-        },
-      }).catch(() => {})
-    }
+    // Delegate to background which uses chrome.scripting.executeScript(world:'MAIN').
+    // Content scripts cannot use chrome.scripting directly, and MV3 blocks
+    // new Function() + inline script tags in the extension's isolated world.
+    chrome.runtime.sendMessage({
+      type:         'GRAFT_EXECUTE_IN_MAIN',
+      code:         script.code,
+      remoteConfig: script.remote_config || {},
+    }, (response) => {
+      if (chrome.runtime.lastError) return // service worker asleep, ignore
+      if (response?.ok) {
+        // Report success analytics
+        void chrome.runtime.sendMessage({
+          type:         'GRAFT_ANALYTICS_EVENT',
+          script_id:    script.id,
+          event_type:   'script_fired',
+          page_url:     window.location.href,
+          companion_id: COMPANION_ID,
+          metadata:     { version: script.version },
+        }).catch(() => {})
+      }
+    })
   }
 
   // ─── Run All Matching Scripts ──────────────────────────────────────────────
@@ -109,7 +98,10 @@
   // ─── Initial Load ──────────────────────────────────────────────────────────
   // Read scripts already stored from the last background sync
 
+  console.log('[Graft] Content script injected on', window.location.href)
+
   chrome.storage.local.get(['graftScripts'], ({ graftScripts }) => {
+    console.log('[Graft] Scripts in storage:', graftScripts?.length ?? 0, graftScripts)
     runMatchingScripts(graftScripts || [])
   })
 

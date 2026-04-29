@@ -1,4 +1,4 @@
-const GRAFT_DASHBOARD = 'https://graft.vercel.app' // Change for local dev
+const GRAFT_DASHBOARD = 'http://localhost:3000' // Change to https://graft.vercel.app for production
 
 // ─── Load state on open ───────────────────────────────────────────────────────
 

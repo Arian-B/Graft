@@ -29,7 +29,8 @@
 
   "permissions": [
     "storage",
-    "alarms"
+    "alarms",
+    "scripting"
   ],
 
   "host_permissions": [
