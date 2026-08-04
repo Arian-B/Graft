@@ -87,6 +87,11 @@ export default function DashboardPage() {
     setGeneratingKey(false)
   }
 
+  const deleteScript = async (scriptId: string) => {
+    await apiFetch(`/api/scripts/${scriptId}`, { method: 'DELETE' })
+    setScripts(prev => prev.filter(s => s.id !== scriptId))
+  }
+
   const revokeKey = async (keyId: string) => {
     if (!activeTeam || !confirm('Revoke this key? The Companion extension will disconnect.')) return
     await apiFetch(`/api/teams/${activeTeam}/keys/${keyId}`, { method: 'DELETE' })
@@ -293,7 +298,7 @@ export default function DashboardPage() {
         {!scriptsLoading && scripts.length > 0 && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
             {scripts.map(script => (
-              <ScriptCard key={script.id} script={script} onToggle={toggleScript} />
+              <ScriptCard key={script.id} script={script} onToggle={toggleScript} onDelete={deleteScript} />
             ))}
           </div>
         )}
@@ -444,12 +449,15 @@ export default function DashboardPage() {
 function ScriptCard({
   script,
   onToggle,
+  onDelete,
 }: {
   script: ScriptWithVersion
   onToggle: (id: string, active: boolean) => void
+  onDelete: (id: string) => void
 }) {
   const router = useRouter()
   const version = script.current_version
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   const timeSince = (dateStr: string) => {
     const diff = Date.now() - new Date(dateStr).getTime()
@@ -525,14 +533,68 @@ function ScriptCard({
           )}
           {!version && <span>Not deployed</span>}
         </div>
-        <button
-          className="btn btn-ghost btn-sm"
-          onClick={e => { e.stopPropagation(); onToggle(script.id, script.is_active) }}
-          style={{ fontSize: 11 }}
-        >
-          {script.is_active ? 'Pause' : 'Resume'}
-        </button>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={e => { e.stopPropagation(); onToggle(script.id, script.is_active) }}
+            style={{ fontSize: 11 }}
+          >
+            {script.is_active ? 'Pause' : 'Resume'}
+          </button>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={e => { e.stopPropagation(); setConfirmDelete(true) }}
+            style={{ fontSize: 11, color: 'var(--red, #ef4444)' }}
+          >
+            <Trash2 size={12} />
+          </button>
+        </div>
       </div>
+
+      {/* ── Delete Confirmation Modal ───────────────── */}
+      {confirmDelete && (
+        <div
+          onClick={e => e.stopPropagation()}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 1000,
+            background: 'rgba(0,0,0,0.7)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <div style={{
+            background: 'var(--bg-surface)',
+            border: '1px solid var(--border)',
+            borderRadius: 14, padding: 28, maxWidth: 400, width: '90%',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+              <Trash2 size={20} color="#ef4444" />
+              <h3 style={{ fontSize: 16, fontWeight: 700 }}>Delete Script?</h3>
+            </div>
+            <p style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 6, lineHeight: 1.6 }}>
+              You are about to permanently delete <strong>&ldquo;{script.name}&rdquo;</strong>.
+            </p>
+            <p style={{ fontSize: 12, color: '#ef4444', marginBottom: 22, lineHeight: 1.5 }}>
+              ⚠️ This will remove all versions and history. This action cannot be undone.
+            </p>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button
+                className="btn btn-ghost btn-sm"
+                onClick={() => setConfirmDelete(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-sm"
+                style={{ background: '#ef4444', color: '#fff', border: 'none' }}
+                onClick={() => { setConfirmDelete(false); onDelete(script.id) }}
+              >
+                Yes, delete permanently
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

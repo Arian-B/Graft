@@ -6,11 +6,11 @@ import dynamic from 'next/dynamic'
 import Navbar from '@/components/layout/Navbar'
 import { useAuth, apiFetch } from '@/lib/auth'
 import type { ScriptWithVersion, ScriptVersion } from '@/lib/types'
-import { ArrowLeft, FlaskConical, Send, Check, X, Rocket, History, Settings, BarChart2 } from 'lucide-react'
+import { ArrowLeft, FlaskConical, Send, Check, X, Rocket, History, Settings, BarChart2, Edit2, Plus } from 'lucide-react'
 
 const MonacoEditor = dynamic(() => import('@monaco-editor/react'), { ssr: false })
 
-type EditorTab = 'versions' | 'config' | 'analytics'
+type EditorTab = 'versions' | 'config' | 'analytics' | 'settings'
 
 export default function EditorPage() {
   const { user, loading } = useAuth()
@@ -29,6 +29,13 @@ export default function EditorPage() {
   const [configJson, setConfigJson] = useState('')
   const [savingConfig, setSavingConfig] = useState(false)
   const [isDirty, setIsDirty] = useState(false)
+  // Settings tab state
+  const [settingName, setSettingName] = useState('')
+  const [settingDesc, setSettingDesc] = useState('')
+  const [settingUrls, setSettingUrls] = useState<string[]>([])
+  const [newUrl, setNewUrl] = useState('')
+  const [savingSettings, setSavingSettings] = useState(false)
+  const [settingsMsg, setSettingsMsg] = useState('')
 
   useEffect(() => {
     if (!loading && !user) router.replace('/auth/login')
@@ -53,6 +60,10 @@ export default function EditorPage() {
       const currentCode = data.script.current_version?.code || ''
       setCode(currentCode)
       setConfigJson(JSON.stringify(data.script.remote_config || {}, null, 2))
+      // Populate settings fields
+      setSettingName(data.script.name || '')
+      setSettingDesc(data.script.description || '')
+      setSettingUrls(data.script.target_urls || [])
 
       const team = meData.teams?.find((t: any) => t.id === data.script.team_id)
       if (team) setRole(team.role)
@@ -125,6 +136,30 @@ export default function EditorPage() {
       alert('Invalid JSON: ' + err.message)
     }
     setSavingConfig(false)
+  }
+
+  const saveSettings = async () => {
+    if (!settingName.trim()) { setSettingsMsg('Name cannot be empty'); return }
+    setSavingSettings(true)
+    setSettingsMsg('')
+    try {
+      const res = await apiFetch(`/api/scripts/${scriptId}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          name:        settingName.trim(),
+          description: settingDesc,
+          target_urls: settingUrls,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error)
+      setScript(prev => prev ? { ...prev, name: settingName, description: settingDesc, target_urls: settingUrls } : prev)
+      setSettingsMsg('✓ Settings saved')
+      setTimeout(() => setSettingsMsg(''), 3000)
+    } catch (err: any) {
+      setSettingsMsg('Error: ' + err.message)
+    }
+    setSavingSettings(false)
   }
 
   const handleCodeChange = (val: string | undefined) => {
@@ -275,7 +310,7 @@ export default function EditorPage() {
             display: 'flex', borderBottom: '1px solid var(--border)',
             padding: '4px 8px', gap: 2,
           }}>
-            {(['versions', 'config', 'analytics'] as EditorTab[]).map(tab => (
+          {(['versions', 'config', 'analytics', 'settings'] as EditorTab[]).map(tab => (
               <button
                 key={tab}
                 onClick={() => { setActiveTab(tab); if (tab === 'analytics') loadAnalytics() }}
@@ -289,9 +324,10 @@ export default function EditorPage() {
                 }}
               >
                 <span style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'center' }}>
-                  {tab === 'versions' ? <><History size={14}/> History</> : 
-                   tab === 'config' ? <><Settings size={14}/> Config</> : 
-                   <><BarChart2 size={14}/> Stats</>}
+                  {tab === 'versions'  ? <><History size={14}/>  History</>  :
+                   tab === 'config'    ? <><Settings size={14}/> Config</>   :
+                   tab === 'analytics' ? <><BarChart2 size={14}/> Stats</>   :
+                   <><Edit2 size={14}/> Edit</>}
                 </span>
               </button>
             ))}
@@ -402,6 +438,99 @@ export default function EditorPage() {
                     ))}
                   </div>
                 )}
+              </div>
+            )}
+            {/* Settings tab */}
+            {activeTab === 'settings' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <p style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                  Edit name, description and target URLs. Works at any deployment stage.
+                </p>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>Script name</label>
+                  <input
+                    value={settingName}
+                    onChange={e => setSettingName(e.target.value)}
+                    style={{
+                      background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+                      borderRadius: 6, color: 'var(--text)', fontSize: 13,
+                      padding: '7px 10px', outline: 'none', width: '100%',
+                    }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>Description</label>
+                  <textarea
+                    value={settingDesc}
+                    onChange={e => setSettingDesc(e.target.value)}
+                    rows={3}
+                    style={{
+                      background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+                      borderRadius: 6, color: 'var(--text)', fontSize: 12,
+                      padding: '7px 10px', outline: 'none', resize: 'vertical', width: '100%',
+                    }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-2)' }}>Target URLs</label>
+                  {settingUrls.map((url, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <code style={{
+                        flex: 1, fontSize: 10, background: 'var(--bg-elevated)',
+                        border: '1px solid var(--border)', borderRadius: 5,
+                        padding: '5px 8px', overflow: 'hidden',
+                        textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        color: 'var(--primary)', fontFamily: 'monospace',
+                      }}>{url}</code>
+                      <button
+                        onClick={() => setSettingUrls(prev => prev.filter((_, j) => j !== i))}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: 2 }}
+                      ><X size={12} /></button>
+                    </div>
+                  ))}
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <input
+                      placeholder="*://example.com/*"
+                      value={newUrl}
+                      onChange={e => setNewUrl(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' && newUrl.trim()) {
+                          setSettingUrls(prev => [...prev, newUrl.trim()])
+                          setNewUrl('')
+                        }
+                      }}
+                      style={{
+                        flex: 1, background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+                        borderRadius: 6, color: 'var(--text)', fontSize: 11,
+                        padding: '6px 8px', outline: 'none',
+                      }}
+                    />
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      style={{ padding: '4px 8px' }}
+                      onClick={() => { if (newUrl.trim()) { setSettingUrls(prev => [...prev, newUrl.trim()]); setNewUrl('') } }}
+                    ><Plus size={13} /></button>
+                  </div>
+                  <p style={{ fontSize: 10, color: 'var(--text-muted)' }}>Press Enter or + to add. Example: <code>*://*.stackoverflow.com/*</code></p>
+                </div>
+
+                {settingsMsg && (
+                  <p style={{ fontSize: 12, color: settingsMsg.startsWith('Error') ? '#ef4444' : 'var(--green)' }}>
+                    {settingsMsg}
+                  </p>
+                )}
+
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={saveSettings}
+                  disabled={savingSettings}
+                  style={{ alignSelf: 'flex-end' }}
+                >
+                  {savingSettings ? 'Saving...' : 'Save settings'}
+                </button>
               </div>
             )}
           </div>
